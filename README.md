@@ -8,14 +8,22 @@
 
 | 用途 | 地址 |
 |---|---|
+| **GitHub（跨人协作，私有）** | **https://github.com/kumu314/weihua-71** |
 | 工作区（本机） | `D:\WorkBuddyData\WorkBuddy\2026-11-08-23-20-21\weihua-71` |
-| 共享远端 origin | `file:///D:/WorkBuddyData/WorkBuddy/2026-11-08-23-20-21/weihua-71.git` |
+| 现场兜底 origin（本地裸仓库） | `file:///D:/WorkBuddyData/WorkBuddy/2026-11-08-23-20-21/weihua-71.git` |
 
 ```bash
-git clone "file:///D:/WorkBuddyData/WorkBuddy/2026-11-08-23-20-21/weihua-71.git"
+# 队友（需先被加为 collaborator 并接受邀请）
+git clone https://github.com/kumu314/weihua-71.git
 cd weihua-71
 node build.js          # 合成 dist/作品71.html
+
+# 本机（不走网络）
+git clone "file:///D:/WorkBuddyData/WorkBuddy/2026-11-08-23-20-21/weihua-71.git"
 ```
+
+> **私有仓库**：队友必须先被邀请为 collaborator（Settings → Collaborators），接受邀请后才能 clone。
+> **现场若连不上 GitHub**：改用 `origin`（本地裸仓库）或 U 盘，见 `docs/分工.md` 第 0 节。
 
 ## 目录
 
