@@ -45,6 +45,28 @@
     var r = Math.round(n * 10) / 10;
     return r % 1 === 0 ? String(r) : r.toFixed(1);
   }
+  // 轨高按契约固定 1 位小数：9.0 m，不能被压成 9 m
+  function fixed1(n) {
+    if (typeof n !== "number" || isNaN(n)) return String(n);
+    return n.toFixed(1);
+  }
+  // 优先用 data.js 的 format()，取不到再本地兜底（UI 不再各自拼单位）
+  function fmtOf(c) {
+    try {
+      if (DATA && typeof DATA.format === "function") return DATA.format(c);
+    } catch (e) { /* 落到本地兜底 */ }
+    return null;
+  }
+  // 相似度：优先问 data.js 的 match()，没有就退化成静态描述
+  function matchOf(c) {
+    try {
+      if (DATA && typeof DATA.match === "function") {
+        var m = DATA.match(c);
+        if (m && typeof m === "object") return m;
+      }
+    } catch (e) { /* 落到兜底 */ }
+    return null;
+  }
   function cfgById(id) {
     if (!DATA || !DATA.configs) return null;
     for (var i = 0; i < DATA.configs.length; i++) {
@@ -52,26 +74,28 @@
     }
     return null;
   }
-  // 把占位符换成当前方案的值
-  // fix(P0): 补 {matchCount}/{matchScore}，并加兜底正则，防止任何未识别占位符漏到屏幕上
+  // 占位符替换：{span}/{railHeight}/{duty}/{renderSec} + {matchCount}/{matchScore}
+  // 末尾兜底清掉任何未识别的 {xxx}，保证屏幕上不会漏出花括号
   function fill(t, c) {
-    var m = (window.WH && WH.DATA && typeof WH.DATA.match === "function")
-      ? WH.DATA.match({ span: c.span, capacity: c.capacity, bayType: c.bayType })
-      : null;
+    var f = fmtOf(c);
+    var m = matchOf(c);
+    var total = (DATA && DATA.configs && DATA.configs.length) ? DATA.configs.length : 0;
+    var matchCount = m && m.count ? String(m.count) : (total ? String(total) : "—");
+    var matchScore = (m && typeof m.score === "number") ? String(Math.round(m.score * 100)) : "—";
     return String(t)
-      .replace(/\{span\}/g, num(c.span))
-      .replace(/\{railHeight\}/g, num(c.railHeight))
+      .replace(/\{span\}/g, f ? f.span.replace(/\s*m$/, "") : num(c.span))
+      .replace(/\{railHeight\}/g, f ? f.railHeight.replace(/\s*m$/, "") : fixed1(c.railHeight))
       .replace(/\{duty\}/g, c.duty)
-      .replace(/\{renderSec\}/g, num(c.renderSec))
-      .replace(/\{matchCount\}/g, m && m.count ? String(m.count) : "6")
-      .replace(/\{matchScore\}/g, m && typeof m.score === "number" ? String(Math.round(m.score * 100)) : "—")
-      /* 第三步用：命中库内哪一套（切方案时实时变化，比"100%"更有说服力） */
+      .replace(/\{renderSec\}/g, f ? f.renderSec.replace(/\s*s$/, "") : num(c.renderSec))
+      .replace(/\{matchCount\}/g, matchCount)
+      .replace(/\{matchScore\}/g, matchScore)
+      /* 第三步用：命中库内哪一套（切方案时实时变化） */
       .replace(/\{hitName\}/g, (function () {
         var s = c.scene || "";
         if (s.length > 8) s = s.split("/")[0].trim();   // 卡片窄，长场景名截到第一段
         return c.id + (s ? " · " + s : "");
       })())
-      .replace(/\{[a-zA-Z]+\}/g, "");
+      .replace(/\{[A-Za-z0-9_]+\}/g, "");   // 兜底：未知占位符不留残骸
   }
 
   /* ---------------- 定时器（代次号强一致） ---------------- */
@@ -94,14 +118,26 @@
   }
 
   /* ---------------- 参数定义（7 值） ---------------- */
+  // 参数值一律走 data.js 的 format()，取不到才本地兜底
+  function pval(k, c) {
+    var f = fmtOf(c);
+    if (f && f[k] != null && f[k] !== "") return String(f[k]);
+    if (k === "span") return num(c.span) + " m";
+    if (k === "capacity") return Math.round(c.capacity) + " t";
+    if (k === "railHeight") return fixed1(c.railHeight) + " m";
+    if (k === "duty") return String(c.duty);
+    if (k === "agv") return c.agv > 0 ? c.agv + " 台" : "无 AGV";
+    if (k === "renderSec") return num(c.renderSec) + " s";
+    return "";
+  }
   var PARAMS = [
     { k: "model",      label: "型号",     g: 0, f: function (c) { return c.model; } },
-    { k: "span",       label: "跨度",     g: 1, f: function (c) { return num(c.span) + " m"; } },
-    { k: "capacity",   label: "起重量",   g: 1, f: function (c) { return num(c.capacity) + " t"; } },
-    { k: "railHeight", label: "轨高",     g: 1, f: function (c) { var v = typeof c.railHeight === "number" && !isNaN(c.railHeight) ? c.railHeight : 0; return v.toFixed(1) + " m"; } },
-    { k: "duty",       label: "工作级别", g: 1, f: function (c) { return c.duty; } },
-    { k: "agv",        label: "AGV 数量", g: 3, f: function (c) { return c.agv > 0 ? c.agv + " 台" : "无 AGV"; } },
-    { k: "renderSec",  label: "出图用时", g: 3, f: function (c) { return num(c.renderSec) + " s"; } }
+    { k: "span",       label: "跨度",     g: 1, f: function (c) { return pval("span", c); } },
+    { k: "capacity",   label: "起重量",   g: 1, f: function (c) { return pval("capacity", c); } },
+    { k: "railHeight", label: "轨高",     g: 1, f: function (c) { return pval("railHeight", c); } },
+    { k: "duty",       label: "工作级别", g: 1, f: function (c) { return pval("duty", c); } },
+    { k: "agv",        label: "AGV 数量", g: 3, f: function (c) { return pval("agv", c); } },
+    { k: "renderSec",  label: "出图用时", g: 3, f: function (c) { return pval("renderSec", c); } }
   ];
   var PARAMS_BY_K = {};
   (function () { for (var i = 0; i < PARAMS.length; i++) PARAMS_BY_K[PARAMS[i].k] = PARAMS[i]; })();
@@ -464,9 +500,9 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
   function paneParams(c) {
     var rows = [
       ["型号", c.model],
-      ["跨度", num(c.span) + " m"],
-      ["起重量", num(c.capacity) + " t"],
-      ["轨高", num(c.railHeight) + " m"]
+      ["跨度", pval("span", c)],
+      ["起重量", pval("capacity", c)],
+      ["轨高", pval("railHeight", c)]
     ];
     return '<div class="wh-pane-p">' + rows.map(function (r) {
       return '<div class="wh-pp"><span>' + esc(r[0]) + '</span><b>' + esc(r[1]) + '</b></div>';
