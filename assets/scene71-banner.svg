@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400" role="img" aria-labelledby="ttl desc">
+  <title id="ttl">装好给你看 · 场景 71</title>
+  <desc id="desc">客户实景照片加技术方案，生成可 360 度拖动查看的实景安装 3D 效果图</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#091218"/>
+      <stop offset="0.55" stop-color="#13242E"/>
+      <stop offset="1" stop-color="#0A171F"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#F2A01E"/>
+      <stop offset="1" stop-color="#FFD869"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFC53D" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#FFC53D" stop-opacity="0"/>
+    </radialGradient>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 Z" fill="#5FD3C4"/>
+    </marker>
+    <marker id="arrowY" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#FFC53D"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="400" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1200" height="4" fill="#FFC53D"/>
+  <circle cx="1000" cy="215" r="230" fill="url(#glow)"/>
+
+  <!-- 左侧细竖线装饰 -->
+  <rect x="40" y="120" width="3" height="216" fill="#FFC53D" opacity="0.75"/>
+
+  <!-- ===== 左：标题区 ===== -->
+  <g font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC','Hiragino Sans GB',system-ui,sans-serif">
+    <!-- logo 方块 -->
+    <rect x="64" y="36" width="38" height="38" rx="9" fill="#FFC53D"/>
+    <path d="M75 49 h11 v9 a5.5 5.5 0 0 1 -11 0" fill="none" stroke="#0C1A22" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M80.5 63 v6" stroke="#0C1A22" stroke-width="2.6" stroke-linecap="round"/>
+    <text x="114" y="55" font-size="15" font-weight="600" fill="#EAF3F6" letter-spacing="1.2">装好给你看</text>
+    <text x="114" y="73" font-size="10.5" fill="#7FA3B0" letter-spacing="2.4">WEIHUA HACKATHON  /  SCENE 71</text>
+
+    <text x="64" y="170" font-size="60" font-weight="700" fill="#F5F9FB" letter-spacing="3">装好给你看</text>
+    <text x="66" y="212" font-size="21" fill="#C3D5DE">客户实景照片 + 技术方案 → 实景安装 3D 效果图</text>
+
+    <!-- 流程胶囊 -->
+    <g font-size="14">
+      <rect x="64" y="242" width="116" height="40" rx="20" fill="#18303A" stroke="#315260" stroke-width="1"/>
+      <text x="122" y="267" text-anchor="middle" fill="#DCE9EE">实景照片</text>
+      <path d="M188 262 h20" stroke="#FFC53D" stroke-width="1.8" marker-end="url(#arrowY)"/>
+
+      <rect x="216" y="242" width="116" height="40" rx="20" fill="#18303A" stroke="#315260" stroke-width="1"/>
+      <text x="274" y="267" text-anchor="middle" fill="#DCE9EE">技术方案</text>
+      <path d="M340 262 h20" stroke="#FFC53D" stroke-width="1.8" marker-end="url(#arrowY)"/>
+
+      <rect x="368" y="242" width="212" height="40" rx="20" fill="#3A2A08" stroke="#FFC53D" stroke-width="1.3"/>
+      <text x="474" y="267" text-anchor="middle" fill="#FFD869" font-weight="600">3D 落地 · 360° 拖动查看</text>
+    </g>
+
+    <text x="64" y="346" font-size="13" fill="#7897A5">单文件 · 零外部依赖 · 离线可跑</text>
+    <text x="64" y="368" font-size="13" fill="#7897A5">配准落地 / 视角预设 / 自动环绕 / 导出 PNG</text>
+  </g>
+
+  <!-- ===== 右：照片框 + 透视地面 + 门机 ===== -->
+  <!-- 相框 -->
+  <rect x="742" y="52" width="414" height="310" rx="10" fill="#0D1C24" fill-opacity="0.45" stroke="#5FD3C4" stroke-opacity="0.30" stroke-width="1.5" stroke-dasharray="7 6"/>
+  <text x="760" y="80" font-size="11" fill="#5FD3C4" fill-opacity="0.75" letter-spacing="1.5" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif">实景照片 / SITE PHOTO</text>
+  <text x="1140" y="80" text-anchor="end" font-size="11" fill="#5FD3C4" fill-opacity="0.75" letter-spacing="1.5" font-family="system-ui,sans-serif">360 VIEW / 3D PREVIEW</text>
+
+  <!-- 透视地面网格：水平线 -->
+  <g stroke="#5FD3C4" stroke-opacity="0.15" stroke-width="1">
+    <path d="M748 286 H1150"/>
+    <path d="M748 300 H1150"/>
+    <path d="M748 316 H1150"/>
+    <path d="M748 334 H1150"/>
+    <path d="M748 352 H1150"/>
+  </g>
+  <!-- 放射线 -->
+  <g stroke="#5FD3C4" stroke-opacity="0.13" stroke-width="1">
+    <path d="M950 258 L760 362"/>
+    <path d="M950 258 L820 362"/>
+    <path d="M950 258 L880 362"/>
+    <path d="M950 258 L940 362"/>
+    <path d="M950 258 L1000 362"/>
+    <path d="M950 258 L1060 362"/>
+    <path d="M950 258 L1120 362"/>
+  </g>
+
+  <!-- 四点地面配准：虚线矩形 + 四个十字 -->
+  <path d="M868 306 L1040 306 L1120 350 L800 350 Z" fill="#5FD3C4" fill-opacity="0.045" stroke="#5FD3C4" stroke-opacity="0.55" stroke-width="1.2" stroke-dasharray="5 5"/>
+  <g stroke="#FFC53D" stroke-width="1.6" stroke-linecap="round">
+    <path d="M862 306 h12 M868 300 v12"/>
+    <path d="M1034 306 h12 M1040 300 v12"/>
+    <path d="M1114 350 h12 M1120 344 v12"/>
+    <path d="M794 350 h12 M800 344 v12"/>
+  </g>
+
+  <!-- 地面接触阴影 -->
+  <ellipse cx="1000" cy="296" rx="118" ry="13" fill="#000000" fill-opacity="0.30"/>
+
+  <!-- 门式起重机线框 -->
+  <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+    <!-- A 型支腿 -->
+    <path d="M902 292 L920 158" stroke="#F2A01E" stroke-width="3"/>
+    <path d="M932 292 L940 158" stroke="#F2A01E" stroke-width="3"/>
+    <path d="M1098 292 L1080 158" stroke="#F2A01E" stroke-width="3"/>
+    <path d="M1068 292 L1060 158" stroke="#F2A01E" stroke-width="3"/>
+    <path d="M902 292 H932" stroke="#F2A01E" stroke-width="3"/>
+    <path d="M1068 292 H1098" stroke="#F2A01E" stroke-width="3"/>
+    <!-- 支腿横撑 -->
+    <path d="M910 240 H930 M1070 240 H1090" stroke="#F2A01E" stroke-opacity="0.65" stroke-width="2"/>
+    <!-- 双主梁 -->
+    <rect x="898" y="140" width="204" height="19" fill="#FFC53D" fill-opacity="0.14" stroke="#FFC53D" stroke-width="2.4"/>
+    <path d="M898 166 H1102" stroke="#FFD869" stroke-opacity="0.85" stroke-width="2"/>
+    <path d="M906 159 H1094" stroke="#F2A01E" stroke-opacity="0.5" stroke-width="1"/>
+    <!-- 小车 -->
+    <rect x="978" y="130" width="44" height="12" rx="2" fill="#FFC53D" fill-opacity="0.35" stroke="#FFD869" stroke-width="1.6"/>
+    <!-- 起升绳 + 吊钩 -->
+    <path d="M1000 171 V246" stroke="#EAF3F6" stroke-opacity="0.85" stroke-width="1.6"/>
+    <path d="M1000 246 v8 a6 6 0 0 0 6 6" stroke="#EAF3F6" stroke-width="2"/>
+    <!-- 货物 -->
+    <rect x="974" y="260" width="52" height="24" fill="#5FD3C4" fill-opacity="0.16" stroke="#5FD3C4" stroke-width="1.8"/>
+    <path d="M974 272 H1026" stroke="#5FD3C4" stroke-opacity="0.5" stroke-width="1"/>
+  </g>
+
+  <!-- 360° 环绕示意 -->
+  <path d="M868 300 A 132 34 0 0 1 1132 300" fill="none" stroke="#5FD3C4" stroke-width="1.5" stroke-opacity="0.45" stroke-dasharray="5 6"/>
+  <path d="M868 300 A 132 34 0 0 0 1132 300" fill="none" stroke="#5FD3C4" stroke-width="2" stroke-opacity="0.85" marker-end="url(#arrow)"/>
+  <!-- 相框外底部标注 -->
+  <text x="950" y="386" text-anchor="middle" font-size="12.5" font-weight="600" fill="#5FD3C4" letter-spacing="1" font-family="'PingFang SC','Microsoft YaHei',system-ui,sans-serif">360° 产品自转 · 背景不动</text>
+</svg>
