@@ -200,9 +200,12 @@
     }
   }
 
-  /* 门式地面轨道：混凝土轨枕 + 钢轨 */
-  function buildTracks(parent, p, kk) {
-    var len = p.span * 1.7;
+  /* 门式地面轨道：混凝土轨枕 + 钢轨。
+   * 长度按「底脚外再留 5k」算，不再写死成跨度的 1.7 倍 ——
+   * 1.7 倍会让 48m 跨的门机 Z 向深达 81.6 米，比机身还长一倍，
+   * 既不像跑道也不像设备，还会把相机的取景撑爆（view3d 按 span/railH 估距离，直接切腿）。 */
+  function buildTracks(parent, p, kk, footHalf) {
+    var len = 2 * (footHalf + 5 * kk);
     [-1, 1].forEach(function (sx) {
       addBox(parent, 1.5 * kk, 0.22, len, MAT.concrete, sx * p.span / 2, 0.11, 0);
       addBox(parent, 0.5 * kk, 0.18, len, MAT.steelTop, sx * p.span / 2, 0.31, 0);
@@ -286,7 +289,7 @@
     var beamTop = buildGirder(g, p, k, gap, p.rail);
     buildTrolley(g, beamTop, gap, k);
     buildHoist(g, p, beamTop, k, {});
-    buildTracks(g, p, k);
+    buildTracks(g, p, k, botZ);
   }
 
   /* 铸造：双梁加厚 + 司机室 + 隔热罩 + 大吊钩（桥式底盘，冶金车间用） */
