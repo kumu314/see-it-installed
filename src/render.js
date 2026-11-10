@@ -288,7 +288,7 @@
       text(22, 355, capacity + " t  /  " + duty, "#f8d48a", 12, ' font-weight="600"');
       text(22, 373, "轨高 " + railHeight.toFixed(1) + " m · " + (singleBeam ? "单梁起重" : outdoor ? "轨道式门机" : "双梁起重"), "#a5bac4", 10);
       text(778, 355, count ? "吊装 → AGV 搬运 → 入库" : "吊装 → 轻载仓储", "#a9c9c9", 10, ' text-anchor="end"');
-      text(778, 373, "AGV " + count + " 台 · 路径为流程示意", "#809ba7", 9, ' text-anchor="end"');
+      text(778, 373, "AGV " + count + " 台 · " + (count ? "路径为流程示意" : "未配置自动搬运"), "#809ba7", 9, ' text-anchor="end"');
     } else {
       text(22, 373, "空场结构 / 待安装设备", "#90a8b6", 10);
     }
