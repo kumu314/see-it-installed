@@ -120,6 +120,12 @@
       box(-0.6, -0.85, 0.55, 1.2, 1.7, 0.16, "#485d66", "#304850", "#afc4c5");
       line([[-0.5, -1.17, 0.38], [0.5, -1.17, 0.38]], "#c2ffe7", 1.5);
       pieces.push("</g>");
+      beginDefinition("agv-x");
+      shadow(0.2, 0.3, 1.8, 1.2, 0.7);
+      box(-1.15, -0.8, 0.17, 2.3, 1.6, 0.38, "#2b9c92", "#176b6b", "#70d9c2");
+      box(-0.85, -0.6, 0.55, 1.7, 1.2, 0.16, "#485d66", "#304850", "#afc4c5");
+      line([[1.17, -0.5, 0.38], [1.17, 0.5, 0.38]], "#c2ffe7", 1.5);
+      pieces.push("</g>");
     }
     pieces.push('</defs><rect width="800" height="400" fill="url(#' + id + 'back)"/><ellipse cx="435" cy="208" rx="360" ry="210" fill="url(#' + id + 'light)"/>');
     polygon([[-2.2, -3, -0.4], [width + 2.2, -3, -0.4], [width + 2.2, length + 2, -0.4], [-2.2, length + 2, -0.4]], "#071019");
@@ -219,18 +225,70 @@
     }
 
     function craneY(index) { return index ? 16.8 : length * 0.53; }
+    function onRoute(points, fraction) {
+      var lengths = [], total = 0;
+      for (var i = 1; i < points.length; i++) {
+        var dx = points[i][0] - points[i - 1][0], dy = points[i][1] - points[i - 1][1];
+        var segment = Math.sqrt(dx * dx + dy * dy);
+        lengths.push(segment); total += segment;
+      }
+      var remaining = total * fraction;
+      for (var j = 0; j < lengths.length; j++) {
+        if (remaining <= lengths[j] || j === lengths.length - 1) {
+          var amount = lengths[j] ? remaining / lengths[j] : 0;
+          return { x: points[j][0] + (points[j + 1][0] - points[j][0]) * amount,
+            y: points[j][1] + (points[j + 1][1] - points[j][1]) * amount,
+            dx: points[j + 1][0] - points[j][0], dy: points[j + 1][1] - points[j][1] };
+        }
+        remaining -= lengths[j];
+      }
+    }
+    function drawRoute(points, index, bayIndex, routeColor) {
+      pieces.push('<g data-component="agv-route" data-route-index="' + index + '" data-bay-index="' + bayIndex +
+        '" data-route-color="' + routeColor + '" data-world-path="' + points.map(function (p) { return f(p[0]) + "," + f(p[1]); }).join(";") + '">');
+      line(points, "#0a1821", 4.5, ' opacity="0.65"');
+      line(points, routeColor, 1.45, ' stroke-dasharray="4 4" opacity="0.95"');
+      var arrows = [];
+      // One arrow in each third of the world-space route, away from both markers.
+      for (var a = 0; a < 3; a++) {
+        var position = onRoute(points, (a + 0.5) / 3);
+        var center = project(position.x, position.y, 0.08);
+        var ahead = project(position.x + position.dx, position.y + position.dy, 0.08);
+        var vx = ahead[0] - center[0], vy = ahead[1] - center[1];
+        var norm = Math.sqrt(vx * vx + vy * vy) || 1;
+        vx /= norm; vy /= norm;
+        arrows.push("M" + f(center[0] + vx * 3.6) + "," + f(center[1] + vy * 3.6) +
+          "L" + f(center[0] - vx * 2.5 - vy * 2.4) + "," + f(center[1] - vy * 2.5 + vx * 2.4) +
+          "L" + f(center[0] - vx * 2.5 + vy * 2.4) + "," + f(center[1] - vy * 2.5 - vx * 2.4) + "Z");
+      }
+      pieces.push('<path d="' + arrows.join(" ") + '" fill="' + routeColor + '" data-component="route-arrows"/>');
+      var start = project(points[0][0], points[0][1], 0.08);
+      var end = project(points[points.length - 1][0], points[points.length - 1][1], 0.08);
+      pieces.push('<circle cx="' + start[0] + '" cy="' + start[1] + '" r="3.1" fill="#a5edc1" stroke="#152c33" stroke-width="1.1" data-component="pickup-marker"/>');
+      pieces.push('<rect x="' + f(end[0] - 3) + '" y="' + f(end[1] - 3) + '" width="6" height="6" rx="0.5" fill="#f1ca7a" stroke="#3f3626" stroke-width="0.8" data-component="dropoff-marker"/>');
+      pieces.push("</g>");
+    }
     if (after) {
       for (var cast = 0; cast < bayCount; cast++) shadow(cast * span + span * 0.52, craneY(cast) + 1.5, span * 0.62, 2.1, 0.85);
-      if (count > 0) {
-        pieces.push('<g data-component="agv-route">');
-        var route = [[span * 0.55, craneY(0) - 5, 0.08], [span * 0.55, 4, 0.08], [span * 0.82, 4, 0.08], [span * 0.82, 20, 0.08]];
-        line(route, "#58d6bc", 1.6, ' stroke-dasharray="5 5"');
-        pieces.push("</g>");
-      }
+      var routes = [], routeColors = ["#66dbbf", "#8bb9fc", "#e8c17b", "#d8a8ed"];
       for (var a = 0; a < count; a++) {
         var bi = doubleBay ? a % 2 : 0;
-        use("agv", bi * span + span * (a % 2 ? 0.72 : 0.48), 7.5 + Math.floor(a / 2) * 3,
-          ' data-component="agv" data-agv-index="' + a + '"');
+        var lane = Math.floor(a / bayCount);
+        var lanesInBay = Math.ceil((count - bi) / bayCount);
+        var offset = lanesInBay > 1 ? lane * Math.min(2.6, span * 0.13) / (lanesInBay - 1) : 0;
+        var bx = bi * span;
+        // Parallel offsets change both turns; no segment crosses a column row or end wall.
+        var route = [[bx + span * 0.3 + offset, craneY(bi) - 2 + offset * 0.35, 0.08],
+          [bx + span * 0.3 + offset, 3 + offset, 0.08],
+          [bx + span * 0.7 - offset, 3 + offset, 0.08],
+          [bx + span * 0.7 - offset, 17 + offset, 0.08], [bx + span * 0.8, 17 + offset, 0.08]];
+        drawRoute(route, a, bi, routeColors[a % routeColors.length]);
+        routes.push(route);
+      }
+      for (var vehicle = 0; vehicle < count; vehicle++) {
+        var pose = onRoute(routes[vehicle], 0.13 + (vehicle % 4) * 0.12);
+        use(pose.dx ? "agv-x" : "agv", pose.x, pose.y, ' data-component="agv" data-agv-index="' + vehicle +
+          '" data-world-x="' + f(pose.x) + '" data-world-y="' + f(pose.y) + '"');
       }
     }
 
@@ -294,7 +352,7 @@
       text(22, 355, capacity + " t  /  " + duty, "#f8d48a", 12, ' font-weight="600"');
       text(22, 373, "轨高 " + railHeight.toFixed(1) + " m · " + (outdoor ? "轨道式门机" : capacity <= 10 ? "单梁起重" : doubleBay ? "双跨起重" : "双梁起重"), "#b0c3cd", 10);
       text(778, 355, count ? "吊装 → AGV 搬运 → 入库" : "吊装 → 轻载仓储", "#bdd6d4", 10, ' text-anchor="end"');
-      text(778, 373, "AGV " + count + " 台 · " + (count ? "路径为流程示意" : "未配置自动搬运"), "#98b0bc", 9, ' text-anchor="end"');
+      text(778, 373, "AGV " + count + " 台 · " + (count ? count + " 条路线 / 起点圆点 · 终点方块" : "未配置自动搬运"), "#98b0bc", 9, ' text-anchor="end"');
     } else {
       text(22, 373, outdoor ? "轨道基础 / 堆料区 · 待安装门机" : "已有厂房结构 / 待安装起重设备", "#a3b7c3", 10);
     }
