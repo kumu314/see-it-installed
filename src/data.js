@@ -1,18 +1,42 @@
 /* ============================================================
- * src/data.js  ·  队友 B 第三轮 + 小羽代改（卫华真实产品线）
+ * src/data.js  ·  队友 B（第四轮 / 今晚最后一轮：真实产品线数据收口）
  *
- * 本轮改动（在 B 第三轮基础上，只改内容不改变逻辑）：
- *   1. configs 六套换成卫华官网公开的真实产品线
- *      （2000t 门机 / 450t 造船门机 / 500t 铸造 / 600t 水电门机 /
- *        电解铜多功能 / QD 32/5t 通用对照）
- *   2. 新增 productType（bridge/gantry/casting/portal）与 columnSpan，
- *      供 render.js 区分类别、供净距计算使用
- *   3. validate 的 capacity 上限 1000 -> 5000（否则 2000t 会被判非法）
- *   4. steps 前三步文案改为「录入 / 换算 / 命中」，避免被误读为自动识别
- *   5. rerender 改为「跨度 36 m、起重量 600 t」-> 目标 D
+ * 【基线说明】本轮开工前，main@7caf51f 已由小羽按「B 推不上则代改
+ *   data.js」的兜底条款，把六套配置换成卫华官网公开的真实产品线并
+ *   直接合入 main。B 已逐条核对：六套型号、productType、columnSpan、
+ *   customerAsk / painPoint、source:'doc'、validate 上限、steps 去 AI 化、
+ *   rerender 对齐 D，全部符合本轮任务表格。故本轮【六套数据一字未改】，
+ *   不重复造轮子、不覆盖队友工作，只补 B 职责内仍缺的收口项。
  *
- * 口径：型号与项目名来自卫华官网公开资料（source:'doc'）；
- *       跨度/轨高/出图用时为示意值，不是官方技术参数。
+ * 本轮（B）改动，仅 3 处，均不触碰六套数据、不删改任何已有字段名：
+ *   1. __validate() 纳入本轮新增字段：productType 枚举 / columnSpan 与
+ *      bayType 一致性 / source 枚举 / model·scene·customerAsk·painPoint
+ *      非空。理由：作品本轮要从「能看」升级到「能判断」，而 productType
+ *      与 columnSpan 正是四形态渲染与净距判断的数据基础，缺自检则数据
+ *      出错时没有任何拦截。沿用前几轮 B 建立的自检机制，返回 [] 表示全过。
+ *   2. meta 拆清来源口径：source='doc'（型号与项目名来自官网公开资料）与
+ *      valueSource='sim'（跨度/吨位/轨高/柱距/出图用时均为演示示意值），
+ *      避免「doc」被误读成「数值来自官网」。
+ *   3. disclaimer 精确化：明确「仅作示意、不代表卫华授权或合作、非官方
+ *      技术参数、不可用于工程判断」，对应本轮边界第 6 条与话术合规红线。
+ *
+ * 小羽代改版已包含（本轮全部保留）：
+ *   - configs 六套换成卫华官网公开的真实产品线
+ *     （2000t 门机 / 450t 造船门机 / 500t 铸造 / 600t 水电门机 /
+ *       电解铜多功能 / QD 32/5t 通用对照），F 保留为通用对照
+ *   - 新增 productType（bridge/gantry/casting/portal）与 columnSpan
+ *     （露天 0 / 单跨 6 / 双跨 12），供四形态渲染与净距计算使用
+ *   - source:'doc' 标注型号与项目名来自官网公开资料
+ *   - validate 上限放宽：span<150 / capacity<5000 / railHeight<80
+ *   - steps 前三步文案改「录入 / 换算 / 命中」，避免被误读为自动识别
+ *   - rerender 改「跨度 36 m、起重量 600 t」→ 目标 D
+ *
+ * 口径：型号与项目名来自卫华官网公开资料，仅作示意，不代表卫华授权或
+ *       合作；跨度、起重量、轨高、柱距、出图用时等数值均为演示示意值，
+ *       非官方技术参数、非实测，不可用于工程判断。
+ *
+ * 约定：IIFE，只挂 window.WH.DATA；match / __validate / format 均为纯函数，
+ *       不碰 DOM、不写全局状态；零外部 URL。
  * ========================================================== */
 (function () {
   "use strict";
@@ -165,10 +189,16 @@
     return { count: configs.length, score: score, nearest: bestId };
   }
 
+  /* ---------- 数据自检：空数组表示全通过 ----------
+     第四轮起纳入本轮新增字段：productType / columnSpan / source /
+     model·scene·customerAsk·painPoint，作为「能判断」的数据质量门禁。 */
   function validate() {
     var out = [];
     var seen = Object.create(null);
     var bayOK = ['single', 'double', 'outdoor'];
+    var typeOK = ['bridge', 'gantry', 'casting', 'portal'];
+    var srcOK = ['sim', 'calc', 'doc'];
+    var textKeys = ['model', 'scene', 'customerAsk', 'painPoint'];
 
     function check(field, value, ok, problem) {
       if (!ok) out.push({ field: field, value: value, problem: problem });
@@ -184,6 +214,22 @@
       check(p + '.bayType', c.bayType, bayOK.indexOf(c.bayType) !== -1, 'bayType 必须是 single / double / outdoor');
       check(p + '.id', c.id, !(c.id in seen), 'id 重复：' + c.id);
       seen[c.id] = true;
+
+      /* 本轮新增字段：四形态与净距判断的数据基础 */
+      check(p + '.productType', c.productType, typeOK.indexOf(c.productType) !== -1,
+            'productType 必须是 bridge / gantry / casting / portal');
+      check(p + '.columnSpan', c.columnSpan,
+            isNum(c.columnSpan) &&
+            (c.bayType === 'outdoor' ? c.columnSpan === 0 :
+             c.bayType === 'double'  ? c.columnSpan === 12 :
+                                       c.columnSpan === 6),
+            'columnSpan 必须与 bayType 一致：outdoor 0 / single 6 / double 12');
+      check(p + '.source', c.source, srcOK.indexOf(c.source) !== -1,
+            'source 必须是 sim / calc / doc');
+      textKeys.forEach(function (k) {
+        check(p + '.' + k, c[k], typeof c[k] === 'string' && c[k].length > 0,
+              k + ' 必须是非空字符串');
+      });
     });
 
     return out;
@@ -207,8 +253,12 @@
       track: '内容创作',
       scene: '场景 71',
       owner: '归属 活动方',
-      disclaimer: '全部型号、跨度、起重量、用时均为演示模拟值，不是真实设备参数，不可用于工程判断；案例名称取自卫华官网公开资料，仅作示意，不代表合作或授权。',
-      source: 'doc'
+      /* 型号与项目名取自卫华官网公开资料，仅作示意；数值全部为演示示意值 */
+      disclaimer: '型号与项目名称取自卫华官网公开资料，仅作示意，不代表卫华授权或合作；跨度、起重量、轨高、柱距、出图用时等数值均为演示示意值，非官方技术参数、非实测，不可用于工程判断。',
+      /* 页头口径与型号出处来自规则/场景原文与官网公开资料 */
+      source: 'doc',
+      /* 跨度/吨位/轨高/柱距/出图用时等数值均为演示模拟，避免 doc 被误读为数值出处 */
+      valueSource: 'sim'
     },
 
     configs: configs,
