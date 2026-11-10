@@ -22,9 +22,11 @@
         return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
       });
     }
-    var span = value("span", 22.5, 4, 60);
-    var capacity = value("capacity", 32, 1, 300);
-    var railHeight = value("railHeight", 9, 3, 24);
+    /* 上限必须覆盖卫华真实产品线：2000t / 60m 跨度 / 45m 轨高。
+       原来的 300t/60m/24m 会把 2000t 直接替换成 32t，画出来是台小机器。 */
+    var span = value("span", 22.5, 4, 150);
+    var capacity = value("capacity", 32, 1, 5000);
+    var railHeight = value("railHeight", 9, 3, 80);
     var count = Math.floor(value("agv", 2, 0, 8));
     var requestedBay = read(input, "bayType");
     var baseBay = read(base, "bayType");
@@ -41,8 +43,9 @@
     var length = 24;
     var eave = railHeight + 2.5;
     var ridge = eave + (outdoor ? 0 : 1.6);
+    /* 240 而非 278：大吨位门机（60m 跨度 / 45m 轨高）会让主梁顶部顶出画布，留出上方余量 */
     var scale = Math.min(1, 660 / (width * 11.3 + length * 6.3),
-      278 / (width * 3 + length * 3.5 + ridge * 9.2));
+      240 / (width * 3 + length * 3.5 + ridge * 9.2));
     var originX = (800 - (width * 11.3 + length * 6.3) * scale) / 2;
     var originY = 48 + (length * 3.5 + ridge * 9.2) * scale;
     var key = [span, capacity, railHeight, count, type, duty, after].join("|");
@@ -364,7 +367,12 @@
     if (after) {
       text(22, 355, capacity + " t  /  " + duty, "#f8d48a", 12, ' font-weight="600"');
       text(22, 373, "轨高 " + railHeight.toFixed(1) + " m · " + (outdoor ? "轨道式门机" : capacity <= 10 ? "单梁起重" : doubleBay ? "双跨起重" : "双梁起重"), "#b0c3cd", 10);
-      text(778, 355, count ? "吊装 → AGV 搬运 → 入库" : "吊装 → 轻载仓储", "#bdd6d4", 10, ' text-anchor="end"');
+      /* 吊装对象随吨位/轨高变化：2000t 门机吊船体分段，32t 桥机吊物料，不该都写「轻载仓储」 */
+      var liftTarget = (capacity >= 1000 || railHeight >= 40) ? "船体分段 / 重型构件"
+        : (doubleBay && capacity >= 300 ? "钢包 / 铸件"
+        : (capacity >= 300 ? "大型构件"
+        : "物料搬运"));
+      text(778, 355, count ? "吊装 → AGV 搬运 → 入库" : "吊装 → " + liftTarget, "#bdd6d4", 10, ' text-anchor="end"');
       var routeText = count ? (outdoor ? "多段路线 · 起吊点 → 终点" : count + " 条路线 / 起点圆点 · 终点方块") : "未配置自动搬运";
       text(778, 373, "AGV " + count + " 台 · " + routeText, "#98b0bc", 9, ' text-anchor="end"');
     } else {
