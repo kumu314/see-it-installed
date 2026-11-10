@@ -275,7 +275,7 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
 .wh-brief.open .wh-bi p{-webkit-line-clamp:3}
 .wh-brief:not(.open) .wh-bi[data-full="1"]{display:none}
 .wh-brief-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px}
-.wh-disc{font-size:10.5px;color:#6f7f8f}
+.wh-disc{font-size:10.5px;line-height:1.35;min-width:0;color:#6f7f8f}
 .wh-more{font-family:inherit;font-size:11px;font-weight:700;color:#9fb0c2;background:transparent;border:1px solid #2c3745;border-radius:7px;padding:3px 9px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
 .wh-more:hover{color:#e8eef5;border-color:#3a4757}
 
@@ -400,6 +400,12 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
 
   function buildBrief() {
     var b = DATA.brief || {};
+    // 合规口径只在数据层维护：ui.js 不再硬编码免责声明，避免 data.js 已经补了
+    // 「不可用于工程判断 / 不代表合作或授权」，屏幕上却还是旧短文案。
+    // 老基线没有 meta.disclaimer 时回退旧文案，保证不白屏。
+    var meta = DATA.meta || {};
+    var disc = meta.disclaimer ||
+      '示意 / 推算，非真实设备参数 · 本作品为离线演示原型，全程零网络请求';
     var rows = [
       ["问题", b.problem, 0],
       ["方案", b.solution, 1],
@@ -412,7 +418,7 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
     $.briefEl.innerHTML =
       '<div class="wh-brief-grid">' + grid + '</div>' +
       '<div class="wh-brief-foot">' +
-        '<span class="wh-disc">示意 / 推算，非真实设备参数 · 本作品为离线演示原型，全程零网络请求</span>' +
+        '<span class="wh-disc" title="' + esc(disc) + '">' + esc(disc) + '</span>' +
         '<button class="wh-more" id="whMore" type="button">展开说明 ▾</button>' +
       '</div>';
   }
