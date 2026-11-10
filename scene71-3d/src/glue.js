@@ -119,9 +119,40 @@
       if (!v || typeof v.toggleFlip !== "function") return;
       v.toggleFlip();
     });
-    tools.appendChild(flipBtn);
+    tools.appendChild(flipBtn);    var zoomOutBtn = mkBtn("−", "缩小（照片与模型同倍率）");
+    zoomOutBtn.id = "wh3dZoomOut";
+    zoomOutBtn.style.display = "none";
+    zoomOutBtn.addEventListener("click", function () {
+      var v = window.WH.view3d;
+      if (v && typeof v.setPhotoZoom === "function") v.setPhotoZoom(v.photoZoom() / 1.25);
+    });
+    tools.appendChild(zoomOutBtn);
+
+    var zoomFitBtn = mkBtn("100%", "恢复原始视角");
+    zoomFitBtn.id = "wh3dZoomFit";
+    zoomFitBtn.style.display = "none";
+    zoomFitBtn.addEventListener("click", function () {
+      var v = window.WH.view3d;
+      if (v && typeof v.setPhotoZoom === "function") v.setPhotoZoom(1);
+    });
+    tools.appendChild(zoomFitBtn);
+
+    var zoomInBtn = mkBtn("+", "放大（照片与模型同倍率）");
+    zoomInBtn.id = "wh3dZoomIn";
+    zoomInBtn.style.display = "none";
+    zoomInBtn.addEventListener("click", function () {
+      var v = window.WH.view3d;
+      if (v && typeof v.setPhotoZoom === "function") v.setPhotoZoom(v.photoZoom() * 1.25);
+    });
+    tools.appendChild(zoomInBtn);
+
+    document.addEventListener("wh71:photo-zoom", function (e) {
+      var z = (e.detail && e.detail.zoom) || 1;
+      var fit = document.getElementById("wh3dZoomFit");
+      if (fit) fit.textContent = Math.round(z * 100) + "%";
+    });
     document.addEventListener("wh71:photo-calibrated", function () {
-      var fb = document.getElementById("wh3dFlip");
+      ["wh3dFlip", "wh3dZoomOut", "wh3dZoomFit", "wh3dZoomIn"].forEach(function (id) { var elx = document.getElementById(id); if (elx) elx.style.display = ""; }); var fb = null;
       if (fb) fb.style.display = "";
     });
 

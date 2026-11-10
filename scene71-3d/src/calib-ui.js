@@ -149,7 +149,7 @@
       '</div></div>',
       '<button type="button" id="whCalibClose" aria-label="关闭标定">关闭</button></header>',
       '<div class="cal-body">',
-      '<p><b>选点口诀：找地面、找大块、找斜的。</b>在地面上选一块面积较大、往远处收拢的矩形（现实中相邻边互相垂直，照片里通常呈梯形），从任意一角开始按 <b>顺时针</b> 依次点 4 个角；第 1→2 点那条边填真实长度（米）。</p>',
+      '<p><b>选点口诀：找地面、找大块、找斜的。</b>在地面上选一块面积较大、往远处收拢的矩形（现实中相邻边互相垂直，照片里通常呈梯形），从任意一角开始按 <b>顺时针</b> 依次点 4 个角；第 1→2 点那条边填真实长度（米）。<span style="color:#7d93a3">滚轮或双指缩放，按住拖动平移。</span></p>',
       '<div class="cal-bar"><button type="button" id="whCalibChoose">选择照片</button>',
       '<input type="file" id="whCalibFile" accept="image/jpeg,image/png,image/webp" hidden>',
       '<span class="k" id="whCalibFileInfo" style="font-size:12px;color:#7d93a3">未选择照片</span></div>',
@@ -169,6 +169,7 @@
       '</div>',
       '<footer class="cal-foot">',
       '<span id="whCalibStatus" style="font-size:13px;color:#7d93a3">等待选择照片</span>',
+      '<button type="button" id="whCalibFit">适应窗口</button>',
       '<button type="button" id="whCalibUndo" disabled style="margin-left:auto">撤销上一点</button>',
       '<button type="button" id="whCalibReset" disabled>重选全部</button>',
       '<button type="button" class="primary" id="whCalibDone" disabled>完成</button>',
@@ -192,6 +193,68 @@
         hint = root.querySelector('#calHint'),
         edge = root.querySelector('#calEdge'),
         fileInfo = root.querySelector('#whCalibFileInfo');
+    /* ---------- 缩放/平移视图（A12） ----------
+       点选一律走 screenToNatural，把缩放平移还原回原图像素，否则放大后点位会整体偏移。 */
+    var view = { k: 1, x: 0, y: 0 };
+    var pointers = new Map();
+    var dragging = false, moved = false, lastX = 0, lastY = 0;
+    var pinchD0 = 0, pinchK0 = 1;
+
+    function clampNum(v, a, b) { return Math.min(b, Math.max(a, v)); }
+
+    function applyView() {
+      image.style.transformOrigin = "0 0";
+      image.style.transform = "translate(" + view.x + "px," + view.y + "px) scale(" + view.k + ")";
+      draw();
+    }
+
+    function screenToNatural(e) {
+      var rect = canvas.getBoundingClientRect();
+      var px = (e.clientX - rect.left - view.x) / view.k;
+      var py = (e.clientY - rect.top - view.y) / view.k;
+      return { x: px * img.naturalWidth / rect.width, y: py * img.naturalHeight / rect.height };
+    }
+
+    function zoomAt(k2, cx, cy) {
+      var rect = canvas.getBoundingClientRect();
+      var sx = cx - rect.left, sy = cy - rect.top;
+      var k1 = view.k, nk = clampNum(k2, 1, 8);
+      view.x = sx - (sx - view.x) * (nk / k1);
+      view.y = sy - (sy - view.y) * (nk / k1);
+      view.k = nk;
+      applyView();
+    }
+
+    function resetView() { view.k = 1; view.x = 0; view.y = 0; applyView(); }
+
+    var mag = document.createElement("canvas");
+    mag.id = "whCalibMag";
+    mag.width = 132; mag.height = 132;
+    mag.style.cssText = "position:fixed;width:132px;height:132px;border-radius:50%;border:2px solid #6ec8fa;pointer-events:none;z-index:10000;display:none;box-shadow:0 8px 22px rgba(0,0,0,.55)";
+    document.body.appendChild(mag);
+
+    function updateMag(e) {
+      if (!img.naturalWidth || picture.hidden) { mag.style.display = "none"; return; }
+      var rect = canvas.getBoundingClientRect();
+      var n = screenToNatural(e);
+      var pxPerCss = img.naturalWidth / (rect.width * view.k);
+      var srcW = 46 * pxPerCss;
+      var srcH = srcW * (mag.height / mag.width);
+      var ctx2 = mag.getContext("2d");
+      ctx2.clearRect(0, 0, mag.width, mag.height);
+      ctx2.fillStyle = "#050a12"; ctx2.fillRect(0, 0, mag.width, mag.height);
+      try { ctx2.drawImage(img, n.x - srcW / 2, n.y - srcH / 2, srcW, srcH, 0, 0, mag.width, mag.height); } catch (err) { /* 越界忽略 */ }
+      ctx2.strokeStyle = "#6ec8fa"; ctx2.lineWidth = 2;
+      ctx2.beginPath();
+      ctx2.moveTo(mag.width / 2, mag.height / 2 - 10); ctx2.lineTo(mag.width / 2, mag.height / 2 + 10);
+      ctx2.moveTo(mag.width / 2 - 10, mag.height / 2); ctx2.lineTo(mag.width / 2 + 10, mag.height / 2);
+      ctx2.stroke();
+      var lx = e.clientX + 24, ly = e.clientY - mag.height - 18;
+      if (ly < 8) ly = e.clientY + 24;
+      if (lx + mag.width > window.innerWidth - 8) lx = e.clientX - mag.width - 24;
+      mag.style.left = lx + "px"; mag.style.top = ly + "px"; mag.style.display = "block";
+    }
+
 
     function steps(n) {
       root.querySelectorAll('.cal-step').forEach(function (el) {
@@ -221,6 +284,7 @@
       if (tempURL && !committed) URL.revokeObjectURL(tempURL);
       if (overlay === root) overlay = null;
       root.remove();
+      if (mag && mag.parentNode) mag.remove();
       setBackgroundInert(false);
       var back = returnFocus;
       returnFocus = null;
@@ -256,6 +320,7 @@
       var ctx = canvas.getContext('2d');
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       ctx.clearRect(0, 0, rect.width, rect.height);
+        ctx.setTransform(ratio * view.k, 0, 0, ratio * view.k, ratio * view.x, ratio * view.y);
       var x = rect.width / img.naturalWidth, y = rect.height / img.naturalHeight;
       if (points.length > 1) {
         ctx.lineWidth = 3;
@@ -303,7 +368,7 @@
         img.__whName = f.name;
         image.src = tempURL;
         picture.hidden = false;
-        points.length = 0; replaceIndex = -1; committed = false;
+        points.length = 0; replaceIndex = -1; committed = false; view.k = 1; view.x = 0; view.y = 0; image.style.transform = "none";
         error.textContent = '';
         fileInfo.textContent = f.name + ' · ' + img.naturalWidth + '×' + img.naturalHeight + ' px';
         syncUI();
@@ -322,35 +387,88 @@
       points.pop(); replaceIndex = -1; committed = false; error.textContent = ''; syncUI(); draw();
     });
 
-    canvas.addEventListener('pointerdown', function (e) {
-      if (!img.naturalWidth) return;
-      var rect = canvas.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      var nx = (e.clientX - rect.left) * img.naturalWidth / rect.width;
-      var ny = (e.clientY - rect.top) * img.naturalHeight / rect.height;
-      var tol = 18 * img.naturalWidth / rect.width;
+    function commitPoint(n) {
+      var tol = 18 * img.naturalWidth / (canvas.getBoundingClientRect().width * view.k);
       var hit = -1;
       for (var i = 0; i < points.length; i++) {
-        if (Math.hypot(points[i].x - nx, points[i].y - ny) <= tol) { hit = i; break; }
+        if (Math.hypot(points[i].x - n.x, points[i].y - n.y) <= tol) { hit = i; break; }
       }
-      // 已选中某个角点：这次点击就是「替换到新位置」，必须先于命中判定
       if (replaceIndex >= 0) {
-        points[replaceIndex] = { x: nx, y: ny };
-        replaceIndex = -1; committed = false; error.textContent = ''; syncUI(); draw();
+        points[replaceIndex] = { x: n.x, y: n.y };
+        replaceIndex = -1; committed = false; error.textContent = ""; syncUI(); draw();
         return;
       }
       if (hit >= 0 && points.length === 4) {
-        // 点现有编号 = 选中替换，避免重做整组
         replaceIndex = hit;
-        hint.textContent = '正在替换第 ' + (hit + 1) + ' 个角点，请点击新位置';
+        hint.textContent = "正在替换第 " + (hit + 1) + " 个角点，请点击新位置";
         draw();
         return;
       }
       if (points.length >= 4) return;
-      points.push({ x: nx, y: ny });
-      committed = false; error.textContent = ''; syncUI(); draw();
+      points.push({ x: n.x, y: n.y });
+      committed = false; error.textContent = ""; syncUI(); draw();
+    }
+
+    canvas.addEventListener("pointerdown", function (e) {
+      if (!img.naturalWidth) return;
+      try { canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId); } catch (err) { /* 合成指针忽略 */ }
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 1) {
+        dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY;
+      } else if (pointers.size === 2) {
+        dragging = false;
+        var ps = Array.from(pointers.values());
+        pinchD0 = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
+        pinchK0 = view.k;
+      }
       e.preventDefault();
     });
+
+    canvas.addEventListener("pointermove", function (e) {
+      if (!img.naturalWidth) return;
+      if (!pointers.has(e.pointerId)) { updateMag(e); return; }
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 2 && pinchD0 > 0) {
+        var ps = Array.from(pointers.values());
+        var d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
+        zoomAt(pinchK0 * (d / pinchD0), (ps[0].x + ps[1].x) / 2, (ps[0].y + ps[1].y) / 2);
+        return;
+      }
+      if (!dragging) return;
+      var dx = e.clientX - lastX, dy = e.clientY - lastY;
+      if (!moved && Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      if (moved) {
+        view.x += dx; view.y += dy;
+        var r0 = canvas.getBoundingClientRect();
+        var limX = r0.width * (view.k - 1) + 40, limY = r0.height * (view.k - 1) + 40;
+        view.x = Math.max(-limX, Math.min(40, view.x));
+        view.y = Math.max(-limY, Math.min(40, view.y));
+        lastX = e.clientX; lastY = e.clientY;
+        applyView();
+      }
+      updateMag(e);
+    });
+
+    function endPointer(e) {
+      var had = pointers.has(e.pointerId);
+      pointers.delete(e.pointerId);
+      if (pointers.size < 2) pinchD0 = 0;
+      if (pointers.size === 0) {
+        if (had && dragging && !moved && img.naturalWidth) commitPoint(screenToNatural(e));
+        dragging = false;
+      }
+    }
+    canvas.addEventListener("pointerup", endPointer);
+    canvas.addEventListener("pointercancel", function (e) { pointers.delete(e.pointerId); dragging = false; pinchD0 = 0; mag.style.display = "none"; });
+    canvas.addEventListener("pointerleave", function () { if (pointers.size === 0) mag.style.display = "none"; });
+
+    canvas.addEventListener("wheel", function (e) {
+      if (!img.naturalWidth) return;
+      e.preventDefault();
+      zoomAt(view.k * (e.deltaY < 0 ? 1.18 : 1 / 1.18), e.clientX, e.clientY);
+    }, { passive: false });
+
+    root.querySelector("#whCalibFit").addEventListener("click", resetView);
 
     root.querySelector('#whCalibApply').addEventListener('click', function () {
       if (points.length !== 4) { error.textContent = '请先标完 4 个角点'; return; }

@@ -102,6 +102,7 @@
     if (st.photoMode) {
       var b = st.camBase;
       if (!b) return;
+      camera.fov = clamp((b.fov || 46) / (st.photoZoom || 1), 12, 80);
       var up = (calib && calib.camera && calib.camera.up) || null;
       if (up && up.length === 3) camera.up.set(up[0], up[1], up[2]);
       else camera.up.set(0, 1, 0);
@@ -117,6 +118,16 @@
     }
     camera.updateProjectionMatrix();
   }
+
+  /* 照片模式缩放（A12）：只动相机 fov，不动模型自身 zoom。
+     这样照片背景和设备叠加一起缩放，米制尺度关系不变。 */
+  function setPhotoZoom(v) {
+    if (!st) return;
+    st.photoZoom = clamp(v, 0.6, 5);
+    applyCamera();
+    document.dispatchEvent(new CustomEvent("wh71:photo-zoom", { detail: { zoom: st.photoZoom } }));
+  }
+  function photoZoomBy(f) { if (st) setPhotoZoom((st.photoZoom || 1) * f); }
 
   /* ---------- 照片模式：模型对齐到标定地面矩形（C 层适配，不动 A/B） ----------
    * 实测（_diag_scale.js / _diag_cam.js）：
@@ -404,6 +415,7 @@
       decor: null,                // C 层动画装饰（AGV/扫描光带）
       fitScale: 1,                // 照片模式：模型 → 标定矩形的缩放
       fitFlipY: false,            // 照片模式：A 的世界 +Y 朝下，需翻转
+      photoZoom: 1,               // 照片模式：相机级缩放（照片与模型同倍率，尺度关系不变）
       fitPos: new THREE.Vector3(0, 0, 0),
       disposed: false, raf: null
     };
@@ -415,7 +427,7 @@
 
     /* ---------- 交互（C4）：转模型不转相机 ---------- */
     var pointers = new Map();
-    var pinchD0 = 0, zoom0 = 1;
+    var pinchD0 = 0, zoom0 = 1, pinchPZ0 = 1;
     var dragging = false, lx = 0, ly = 0;
 
     canvas.addEventListener("pointerdown", function (e) {
@@ -428,7 +440,7 @@
       } else if (pointers.size === 2) {
         var p = Array.from(pointers.values());
         pinchD0 = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
-        zoom0 = st.zoom;
+        zoom0 = st.zoom; pinchPZ0 = st.photoZoom || 1;
         dragging = false;
       }
       e.preventDefault();
@@ -440,6 +452,7 @@
       if (pointers.size === 2 && pinchD0 > 0) {
         var p = Array.from(pointers.values());
         var d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+        if (st.photoMode) { setPhotoZoom(pinchPZ0 * (d / pinchD0)); return; }
         st.zoom = clamp(zoom0 * (d / pinchD0), 0.6, 2.4);
         applyModelTransform();
         if (!st.photoMode) applyCamera();
@@ -465,6 +478,7 @@
     canvas.addEventListener("wheel", function (e) {
       if (st.disposed) return;
       e.preventDefault();
+      if (st.photoMode) { photoZoomBy(e.deltaY < 0 ? 1.08 : 1 / 1.08); return; }
       st.zoom = clamp(st.zoom + e.deltaY * 0.0012, 0.6, 2.4);
       applyModelTransform();
       if (!st.photoMode) applyCamera();
@@ -473,7 +487,7 @@
     canvas.addEventListener("dblclick", function () {
       if (st.disposed) return;
       st.rotY = 0; st.rotX = 0;
-      st.zoom = 1;
+      st.zoom = 1; st.photoZoom = 1;
       applyModelTransform();
       if (!st.photoMode) applyCamera();
     });
@@ -586,6 +600,8 @@
       return st.fitFlipY;
     },
     isPhotoMode: function () { return !!(inst && st && st.photoMode); },
+    setPhotoZoom: function (v) { instance(); setPhotoZoom(v); return st.photoZoom; },
+    photoZoom: function () { return inst ? (st.photoZoom || 1) : 1; },
     fit: function () {
       instance();
       if (st.photoMode) { applyFit(); }
