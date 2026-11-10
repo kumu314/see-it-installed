@@ -89,6 +89,12 @@
       .replace(/\{renderSec\}/g, f ? f.renderSec.replace(/\s*s$/, "") : num(c.renderSec))
       .replace(/\{matchCount\}/g, matchCount)
       .replace(/\{matchScore\}/g, matchScore)
+      /* 第三步用：命中库内哪一套（切方案时实时变化） */
+      .replace(/\{hitName\}/g, (function () {
+        var s = c.scene || "";
+        if (s.length > 8) s = s.split("/")[0].trim();   // 卡片窄，长场景名截到第一段
+        return c.id + (s ? " · " + s : "");
+      })())
       .replace(/\{[A-Za-z0-9_]+\}/g, "");   // 兜底：未知占位符不留残骸
   }
 
