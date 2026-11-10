@@ -154,16 +154,19 @@ WH.initUI()  // 由 ui.js 在最后自动调用一次
 
 ---
 
-## 6. `template.html` 占位（枯木维护）
+## 6. `template.html`（容器骨架，不含视觉）
 
-模板里只有两个占位符：
+模板里只有一个容器和两个占位符：
 
 ```html
+<main id="app"></main>
 <!--INJECT_CSS-->
 <!--INJECT_JS-->
 ```
 
-`build.js` 会把 `src/*.css`（如有）和一个 `<script>` 块替换进去。
+**页面所有 DOM（header、按钮、主体、参数卡）和所有样式，都由 `src/ui.js` 生成/注入。** 模板不决定视觉，也不预设任何布局或配色。
+
+`build.js` 会把 `src/app.css`（如有）和一个 `<script>` 块替换进去。
 
 ---
 
