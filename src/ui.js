@@ -384,7 +384,12 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
   .wh-sub{display:none}
   .wh-head-actions .wh-btn{font-size:12px;padding:7px 10px}
   .wh-statusbar{font-size:11px;gap:6px;padding:6px 9px}
-  .wh-modebar .wh-seg{font-size:11px;padding:6px 3px}
+  .wh-modebar .wh-seg{font-size:11px;padding:6px 3px;min-height:40px}
+  /* iOS 聚焦 <16px 输入会自动放大整页，手机上统一 16px + 44px 触控高度 */
+  .wh-fi{font-size:16px}
+  .wh-fc{min-height:44px}
+  .wh-btn{min-height:44px}
+  .wh-scheme{min-height:56px}
 }
 @media (max-width:900px){
   body{overflow:auto}

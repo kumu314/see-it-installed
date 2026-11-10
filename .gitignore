@@ -15,8 +15,9 @@ Thumbs.db
 .vscode/
 .idea/
 
-# 本地施工辅助（截图/临时工具/浏览器回归产物）
+# 本地施工/走查辅助（截图、临时工具、浏览器回归产物）
 _shots/
 _tools/
 _tests/
+_review/
 tests/ui-verify/_artifacts/

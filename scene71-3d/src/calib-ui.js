@@ -113,8 +113,8 @@
       '#whCalibOverlay .cal-step.done{color:#69d7ad;border-color:rgba(105,215,173,.45)}',
       '#whCalibOverlay .cal-body{width:min(1100px,100%);margin:auto;padding:16px;display:flex;flex-direction:column;gap:12px;flex:1}',
       '#whCalibOverlay p{margin:0;line-height:1.5;color:#a8b6c6}',
-      '#whCalibOverlay .photo{position:relative;margin:auto;max-width:100%;max-height:62vh;line-height:0;background:#050a12;border:1px solid #24333f;border-radius:8px;overflow:hidden}',
-      '#whCalibOverlay img{display:block;max-width:100%;max-height:62vh;width:auto;height:auto}',
+      '#whCalibOverlay .photo{position:relative;margin:0 auto;max-width:100%;max-height:52vh;line-height:0;background:#050a12;border:1px solid #24333f;border-radius:8px;overflow:hidden}',
+      '#whCalibOverlay img{display:block;max-width:100%;max-height:52vh;width:auto;height:auto}',
       '#whCalibOverlay canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}',
       '#whCalibOverlay .cal-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}',
       '#whCalibOverlay button,#whCalibOverlay input{min-height:44px;border-radius:8px;font:inherit}',
@@ -123,11 +123,18 @@
       '#whCalibOverlay button:disabled{opacity:.45;cursor:not-allowed}',
       '#whCalibOverlay button.primary{background:#f0a92e;color:#111;border-color:#f0a92e;font-weight:bold}',
       '#whCalibOverlay input[type=number]{width:120px;background:#101d26;color:white;border:1px solid #577482;padding:8px}',
-      '#whCalibOverlay .cal-side{display:flex;flex-direction:column;gap:10px;padding:14px;background:#101a22;border:1px solid #24333f;border-radius:10px;min-width:220px;max-width:280px}',
+      '#whCalibOverlay .cal-side{display:flex;flex-direction:column;gap:10px;padding:14px;background:#101a22;border:1px solid #24333f;border-radius:10px;min-width:0}',
+      '#whCalibOverlay .cal-side .cal-bar{flex-direction:column;align-items:stretch}',
+      '#whCalibOverlay .cal-side .cal-bar label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#7d93a3}',
+      '#whCalibOverlay input,#whCalibOverlay select{font-size:16px}',
+      '@media (max-width:780px){#whCalibOverlay .cal-body{padding:10px}#whCalibOverlay button{min-height:46px}}',
+      '#whCalibOverlay .cal-side input[type=number]{width:100%}',
+      '#whCalibOverlay .cal-side .primary{width:100%}',
       '#whCalibOverlay .cal-side h3{margin:0;font-size:14px;color:#ffd27a}',
       '#whCalibOverlay .cal-side .k{font-size:12px;color:#7d93a3}',
       '#whCalibOverlay .cal-side .v{font-size:14px;color:#e8eef5;font-variant-numeric:tabular-nums}',
-      '#whCalibOverlay .cal-main{display:flex;gap:14px;align-items:stretch;flex-wrap:wrap}',
+      '#whCalibOverlay .cal-main{display:grid;grid-template-columns:minmax(0,1fr) 264px;gap:14px;align-items:start}',
+      '#whCalibOverlay .cal-main.narrow{grid-template-columns:1fr}',
       '#whCalibOverlay [hidden]{display:none!important}',
       '#whCalibOverlay .cal-err{color:#ff9b9b;min-height:22px;font-size:13px}',
       '#whCalibOverlay .cal-foot{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 20px;border-top:1px solid #30404a;background:#0b141b;position:sticky;bottom:0}',
@@ -153,11 +160,11 @@
       '<div><div class="k">已选角点</div><div class="v" id="whCalibCount">0 / 4</div></div>',
       '<div><div class="k">已知边（第 1 → 2 点）</div><div class="v" id="calEdge">待 4 点齐全</div></div>',
       '<div><div class="k">操作</div><div class="v" style="font-size:13px;line-height:1.5">点号可再次点击选中，再点新位置即可替换；也可用下方按钮撤销。</div></div>',
-      '</div></div>',
       '<div class="cal-bar" id="whCalibLengthControls" hidden>',
-      '<label>已知边长（米） <input type="number" id="whCalibLength" min="0.01" max="500" step="0.1" value="6"></label>',
+      '<label>已知边长（米，第 1→2 点）<input type="number" id="whCalibLength" min="0.01" max="500" step="0.1" value="6"></label>',
       '<button type="button" class="primary" id="whCalibApply">开始标定并应用</button>',
       '</div>',
+      '</div></div>',
       '<div class="cal-err" id="whCalibError" role="alert"></div>',
       '</div>',
       '<footer class="cal-foot">',
@@ -271,6 +278,11 @@
         ctx.fillText(String(i + 1), cx, cy);
       });
     }
+
+    var calMain = root.querySelector('.cal-main');
+    function fitColumns() { if (!calMain) return; calMain.classList.toggle('narrow', root.clientWidth < 780); }
+    fitColumns();
+    window.addEventListener('resize', fitColumns);
 
     root.querySelector('#whCalibClose').addEventListener('click', close);
     document.addEventListener('keydown', keydown, true);
