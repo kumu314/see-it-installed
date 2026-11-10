@@ -8,8 +8,12 @@
   html,body{margin:0;height:100%;background:#0b1722;color:#cfd8e3;font-family:"Microsoft YaHei",sans-serif;overflow:hidden}
   #stage{position:absolute;inset:0}
   #bar{position:absolute;top:10px;left:10px;z-index:10;display:flex;gap:8px;flex-wrap:wrap}
-  button{background:#16222f;border:1px solid #2c3a4a;color:#cfd8e3;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px}
-  button:hover{border-color:#f0a92e;color:#ffd27a}
+  /* 触控精修：目标 ≥44px，暗色工业风，active 金色高亮 */
+  #bar button{min-height:44px;min-width:44px;background:#16222f;border:1px solid #2c3a4a;color:#cfd8e3;
+    padding:8px 16px;border-radius:5px;cursor:pointer;font-size:13px;transition:border-color .15s,color .15s,background .15s}
+  #bar button:hover{border-color:#f0a92e;color:#ffd27a}
+  #bar button.active{border-color:#f0a92e;color:#ffd27a;background:#2a2416}
+  #bar button:active{background:#1d2a38}
   #hint{position:absolute;left:10px;bottom:10px;z-index:10;font-size:12px;color:#5a6b7d;line-height:1.7}
   #status{position:absolute;top:12px;right:12px;z-index:10;font-size:12px;color:#5aa9c9}
 </style>
@@ -21,7 +25,8 @@
   <button data-p="side">侧视</button>
   <button data-p="top">俯视</button>
   <button data-p="iso">45°</button>
-  <button id="exportBtn">导出 PNG</button>
+  <button id="orbitBtn">⟳ 环绕</button>
+  <button id="exportBtn">⤓ 导出 PNG</button>
 </div>
 <div id="status"></div>
 <div id="hint">
@@ -71,6 +76,13 @@
     status.textContent = "WebGL OK · stub 运行中";
     document.querySelectorAll("#bar button[data-p]").forEach(function(b){
       b.addEventListener("click", function(){ WH.view3d.preset(b.getAttribute("data-p")); });
+    });
+    var orbitBtn = document.getElementById("orbitBtn");
+    orbitBtn.addEventListener("click", function(){
+      var on = !WH.view3d.isAutoRotate();
+      WH.view3d.setAutoRotate(on);
+      orbitBtn.classList.toggle("active", on);
+      status.textContent = on ? "自动环绕中（拖动画面即暂停）" : "环绕已关闭";
     });
     document.getElementById("exportBtn").addEventListener("click", function(){
       var url = WH.view3d.exportPNG();
