@@ -30,11 +30,16 @@ function read(p, optional) {
 
 /* ---- 收集模块 ---- */
 const threeSrc = read(threePath);
+// The integrated repository keeps A/B under ../src; standalone copies may keep them locally.
+function optional3d(name) {
+  return read(path.join(ROOT, "src", name), true) || read(path.join(APP2D, name), true);
+}
 const c3d = [
-  read(path.join(ROOT, "src", "calib.js"), true),   // A 可选
-  read(path.join(ROOT, "src", "model.js"), true),   // B 可选
+  optional3d("calib.js"),                            // A 可选
+  optional3d("model.js"),                            // B 可选
   read(path.join(ROOT, "src", "view3d.js")),        // C 核心
-  read(path.join(ROOT, "src", "glue.js"))           // C 接线
+  read(path.join(ROOT, "src", "glue.js")),          // C 接线
+  read(path.join(ROOT, "src", "calib-ui.js"))      // 标定入口
 ].filter(Boolean);
 const app2d = [
   read(path.join(APP2D, "data.js")),
@@ -79,5 +84,5 @@ fs.writeFileSync(outPath, out);
 console.log("BUILD OK (3D)");
 console.log("  output :", outPath);
 console.log("  size   :", size, "bytes (" + (size / 1024).toFixed(0) + " KB)");
-console.log("  calib  :", fs.existsSync(path.join(ROOT, "src", "calib.js")) ? "已接线(A)" : "缺省→示意地面(L2)");
-console.log("  model  :", fs.existsSync(path.join(ROOT, "src", "model.js")) ? "已接线(B)" : "缺省→stub 方块");
+console.log("  calib  :", optional3d("calib.js") ? "已接线(A)" : "缺省→示意地面(L2)");
+console.log("  model  :", optional3d("model.js") ? "已接线(B)" : "缺省→stub 方块");
