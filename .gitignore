@@ -1,0 +1,14 @@
+# 产物备份与临时文件
+dist/*.bak*
+*.bak-*
+*.tmp
+*.log
+
+# 依赖（本项目不需要，防止误提交）
+node_modules/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
