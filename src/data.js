@@ -1,10 +1,16 @@
 /* ============================================================
- * src/data.js  ·  队友 B（第二轮：数据更真 / 文案更打动人 / 格式抗错）
+ * src/data.js  ·  队友 B（第三轮：数据收口 / 只对齐与自证，不加新内容）
  *
  * 数据来源：BRIEF.md 第 6 节（A–D 原样使用）；E/F 取自队友B任务2 文档
  * 结构来源：CONTRACT.md 第 3 节（已有字段名一律不改，只做新增）
- * 本轮新增：meta / configs[].painPoint / industry / customerAsk / source
- *           brief.source / steps[2] 模板 / match() / __validate() / format()
+ * 历史：第二轮新增 meta / painPoint / industry / customerAsk / source /
+ *       brief.source / match() / __validate() / format()，本轮全部保留。
+ *
+ * 第三轮改动（仅 2 处）：
+ *   1. P0 选方案 B：steps[2].d 改为不含任何花括号的写法，
+ *      数量由 configs.length 拼出，屏幕绝不漏出 { }，且不依赖 UI 版本。
+ *   2. meta.source = 'doc'，补齐「场景原文表述」这一类来源标记；
+ *      至此 sim（configs 全部数值）/ calc（brief 周期账）/ doc（页头口径）三类齐全。
  *
  * 约定：IIFE，只挂 window.WH.DATA；三个函数均为纯函数，不碰 DOM、不写全局状态。
  * ========================================================== */
@@ -198,20 +204,23 @@
       track: '内容创作',
       scene: '场景 71',
       owner: '归属 活动方',
-      disclaimer: '全部型号、跨度、起重量、用时均为演示模拟值，不是真实设备参数，不可用于工程判断。'
+      disclaimer: '全部型号、跨度、起重量、用时均为演示模拟值，不是真实设备参数，不可用于工程判断。',
+      /* 页头三条与免责声明的口径来自规则/场景表原文，非模拟、非推算 */
+      source: 'doc'
     },
 
     configs: configs,
 
     bays: bays,
 
-    /* 第 3 步改为模板：{matchCount} / {matchScore} 由 UI 用
-       WH.DATA.match(cfg) 的 count 与 Math.round(score * 100) 替换；
-       第 2、4 步占位符仍由 UI 按原有 fill() 规则替换。 */
+    /* 第三轮 P0（方案 B）：第 3 步不含任何占位符，数据层自己用 configs.length
+       拼出真实套数，屏幕绝不会漏出 { }，也不需要 A 改 UI。
+       match() 仍保留在 WH.DATA 上，供 UI 取真算相似度或验收时自证调用。
+       第 2、4 步占位符沿用契约，由 UI 原有的 fill() 规则替换。 */
     steps: [
       { t: '解析现场照片',   d: '识别柱距、轨顶标高、屋面形式、可避让障碍' },
       { t: '识别结构参数',   d: '跨度 {span} m · 轨高 {railHeight} m · 工作级别 {duty}' },
-      { t: '匹配已归档方案', d: '方案库 {matchCount} 套，最接近 {matchScore}%' },
+      { t: '匹配已归档方案', d: '方案库 ' + configs.length + ' 套，按厂型与跨度匹配最接近的一套' },
       { t: '渲染安装效果图', d: '{renderSec} s 生成 · 参数可改可重出' }
     ],
 
