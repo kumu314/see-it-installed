@@ -378,6 +378,23 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
   .wh-prow{padding:4px 8px}
   .wh-brief{padding:6px 16px 8px}
 }
+/* 900px 高度下把三个面板压进一屏：方案库 F 卡不再被截 */
+@media (max-height:960px){
+  .wh-side{gap:8px}
+  .wh-panel{padding:8px 10px}
+  .wh-panel-h{padding-bottom:6px;margin-bottom:6px}
+  .wh-chips{gap:4px;margin-bottom:7px}
+  .wh-chip{padding:1px 6px}
+  .wh-fc{min-height:34px}
+  .wh-form{gap:5px}
+  .wh-photo-p{font-size:10.5px;line-height:1.35}
+  .wh-scheme{padding:5px 8px}
+  .wh-scheme span{font-size:10px;margin-top:1px}
+  .wh-rerender{margin-top:6px;padding:6px}
+  .wh-steps{margin-top:7px}
+  .wh-step-d{margin-top:2px}
+}
+
 @media (max-width:720px){
   .wh-header{flex-wrap:wrap;gap:8px;padding:8px 12px}
   .wh-brand{flex:1 1 auto;min-width:0}

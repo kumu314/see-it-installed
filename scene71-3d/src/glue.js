@@ -111,6 +111,20 @@
     });
     tools.appendChild(fitBtn);
 
+    var flipBtn = mkBtn("翻转朝向", "设备倒立时手动翻正（仅照片实景模式）");
+    flipBtn.id = "wh3dFlip";
+    flipBtn.style.display = "none";
+    flipBtn.addEventListener("click", function () {
+      var v = window.WH.view3d;
+      if (!v || typeof v.toggleFlip !== "function") return;
+      v.toggleFlip();
+    });
+    tools.appendChild(flipBtn);
+    document.addEventListener("wh71:photo-calibrated", function () {
+      var fb = document.getElementById("wh3dFlip");
+      if (fb) fb.style.display = "";
+    });
+
     var orbitBtn = mkBtn('旋转演示', '自动环绕，可随时停止');
     orbitBtn.id = 'wh3dOrbit';
     orbitBtn.setAttribute('aria-pressed', 'false');

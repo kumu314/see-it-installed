@@ -87,14 +87,29 @@
   function applyModelTransform() {
     if (!st || !st.modelGroup) return;
     var g = st.modelGroup, s = (st.fitScale || 1) * st.zoom;
-    if (st.fitFlipY) {
-      g.scale.set(s, -s, s);          // Y 取负：设备朝照片上方（天花板）立起
-      if (st.fitPos) g.position.copy(st.fitPos);
-    } else {
-      g.scale.setScalar(s);
-      g.position.set(0, 0, 0);
-    }
+    if (st.fitFlipY) g.scale.set(s, -s, s);   // 标定世界 +Y 朝屏幕下方时整体翻 Y
+    else g.scale.setScalar(s);
+    // 不论是否翻转，都要落到标定矩形中心，否则设备会偏出地面矩形
+    if (st.fitPos) g.position.copy(st.fitPos);
+    else g.position.set(0, 0, 0);
     g.rotation.set(st.rotX, st.rotY, 0);
+  }
+
+  /* 朝向判定：标定世界的 +Y 在照片里不一定朝上（取决于从哪个角起手、顺时针还是逆时针）。
+     直接问相机：把模型基座中心沿世界 +Y 投影两次，看屏幕 y 变大还是变小。
+     若 +Y 在屏幕上朝下，模型就得整体 Y 取负，否则会倒着立。 */
+  function screenUpSign() {
+    if (!st || !st.modelGroup || !calib || !calib.camera || !camera) return 1;
+    var c = calib.camera;
+    if (!c.position || !c.lookAt) return 1;
+    var base = st.fitPos ? st.fitPos.clone() : new THREE.Vector3(0, 0, 0);
+    base.y = 0;
+    camera.updateMatrixWorld(true);
+    camera.updateProjectionMatrix();
+    var a = base.clone().project(camera);
+    var b = base.clone().add(new THREE.Vector3(0, 1, 0)).project(camera);
+    if (!isFinite(a.y) || !isFinite(b.y)) return 1;
+    return b.y > a.y ? 1 : -1;
   }
 
   function applyFit() {
@@ -105,7 +120,6 @@
     var L = (calib.rectangle && calib.rectangle.length) || 0;
     var W = (calib.rectangle && calib.rectangle.width) || 0;
     if (!(L > 0) || !(W > 0) || !isFinite(L * W)) { applyModelTransform(); return; }
-    st.fitFlipY = true;
     st.fitPos.set(L / 2, 0, W / 2);   // 矩形中心（地面）
     var g = st.modelGroup;
     if (g) {
@@ -121,6 +135,7 @@
         st.fitScale = clamp(Math.min(L / dx, W / dz) * 0.8, 1e-4, 100);
       }
     }
+    st.fitFlipY = (screenUpSign() < 0);   // 先按标定相机定朝向，再落地
     applyModelTransform();
   }
 
@@ -518,6 +533,14 @@
       applyCamera();
     },
     // 完整显示：示寏模式按包围盒/默认参数重新取景；照片模式只重算模型贴合，不动相机
+    /* 手动翻转：自动判定在俯拍/强透视下可能歧义，留人工出口 */
+    toggleFlip: function () {
+      instance();
+      st.fitFlipY = !st.fitFlipY;
+      applyModelTransform();
+      return st.fitFlipY;
+    },
+    isPhotoMode: function () { return !!(inst && st && st.photoMode); },
     fit: function () {
       instance();
       if (st.photoMode) { applyFit(); }
