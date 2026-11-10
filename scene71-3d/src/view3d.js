@@ -16,6 +16,13 @@
  *   - 上下拖 = modelGroup.rotation.x（限 ±20°，超限像设备翻倒）；
  *   - 滚轮 / 双指 = 模型缩放（0.6×–2.4×）；
  *   - calib 为 null：示意地面（网格 + 轨道）+ 相机可环绕（降级 L2）。
+ *
+ * 照片模式适配（2026-11-11 实测修复，见 _diag_scale.js / _diag_cam.js）：
+ *   - A 的标定相机与 A.project() 完全自洽，相机参数一个都不动；
+ *   - 但标定世界尺度 = 用户填的 knownLength（如 6），B 模型尺度 = span 米（如 48），
+ *     1:1 渲染会把设备放大约 8 倍并穿进相机，近平面把模型切成巨大斜面糊住照片；
+ *   - 且 A 的世界 +Y 在照片里朝下，B 模型 +Y 向上会「倒插进地里」；
+ *   - 故照片模式把模型整体缩放进标定矩形、平移到矩形中心、Y 取负立起来。
  * ========================================================== */
 (function () {
   "use strict";
@@ -68,6 +75,55 @@
     camera.updateProjectionMatrix();
   }
 
+  /* ---------- 照片模式：模型对齐到标定地面矩形（C 层适配，不动 A/B） ----------
+   * 实测（_diag_scale.js / _diag_cam.js）：
+   *   - A 的世界系：原点 = 标定第 1 点，+X → 第 2 点，+Z → 第 4 点，地面 y=0；
+   *   - A 的相机与 project() 完全自洽，pos/look/up/fov 一个都不改；
+   *   - A 的世界 +Y 在照片里朝「下」，B 模型 +Y 向上 → Y 需取负；
+   *   - 标定矩形尺度 = knownLength（如 6），B 模型尺度 = span 米（如 48），
+   *     1:1 渲染时模型 8 角投影 x∈[-2843,5575] 且相机落在模型内部，
+   *     近平面把模型切成巨大斜面糊住照片 —— 必须整体缩放进矩形。
+   * 相机保持不动，照片透视不穿帮。 */
+  function applyModelTransform() {
+    if (!st || !st.modelGroup) return;
+    var g = st.modelGroup, s = (st.fitScale || 1) * st.zoom;
+    if (st.fitFlipY) {
+      g.scale.set(s, -s, s);          // Y 取负：设备朝照片上方（天花板）立起
+      if (st.fitPos) g.position.copy(st.fitPos);
+    } else {
+      g.scale.setScalar(s);
+      g.position.set(0, 0, 0);
+    }
+    g.rotation.set(st.rotX, st.rotY, 0);
+  }
+
+  function applyFit() {
+    st.fitScale = 1;
+    st.fitFlipY = false;
+    if (st.fitPos) st.fitPos.set(0, 0, 0);
+    if (!st.photoMode || !calib || !calib.ok) { applyModelTransform(); return; }
+    var L = (calib.rectangle && calib.rectangle.length) || 0;
+    var W = (calib.rectangle && calib.rectangle.width) || 0;
+    if (!(L > 0) || !(W > 0) || !isFinite(L * W)) { applyModelTransform(); return; }
+    st.fitFlipY = true;
+    st.fitPos.set(L / 2, 0, W / 2);   // 矩形中心（地面）
+    var g = st.modelGroup;
+    if (g) {
+      /* 量「未变换」的局部包围盒：临时清空 TRS 再恢复 */
+      var p0 = g.position.clone(), r0 = g.rotation.clone(), s0 = g.scale.clone();
+      g.position.set(0, 0, 0); g.rotation.set(0, 0, 0); g.scale.set(1, 1, 1);
+      var box = new THREE.Box3().setFromObject(g);
+      g.position.copy(p0); g.rotation.copy(r0); g.scale.copy(s0);
+      if (box && isFinite(box.min.x) && isFinite(box.max.x)) {
+        var dx = Math.max(box.max.x - box.min.x, 1e-3);
+        var dz = Math.max(box.max.z - box.min.z, 1e-3);
+        /* 跨度对齐 L、进深对齐 W，取更严者并留 20% 余量；高度不压扁 */
+        st.fitScale = clamp(Math.min(L / dx, W / dz) * 0.8, 1e-4, 100);
+      }
+    }
+    applyModelTransform();
+  }
+
   /* ---------- 模型装载 ---------- */
   function setModel(group, keepRot) {
     if (!scene || !st) return;
@@ -79,8 +135,7 @@
     }
     st.modelGroup = group || null;
     if (group) {
-      group.rotation.set(keepRot ? st.rotX : 0, keepRot ? st.rotY : 0, 0);
-      group.scale.setScalar(st.zoom);
+      if (!keepRot) { st.rotX = 0; st.rotY = 0; }
       scene.add(group);
       try {
         var box = new THREE.Box3().setFromObject(group);
@@ -88,6 +143,9 @@
           st.target.set(0, Math.max(2, box.max.y * 0.45), 0);
         }
       } catch (e) { /* 空 group 忽略 */ }
+      /* 照片模式下按新模型重新求适配尺度（换方案也要贴合） */
+      if (st.photoMode && calib && calib.ok) applyFit();
+      else applyModelTransform();
     }
     applyCamera();
   }
@@ -147,6 +205,7 @@
     scene.fog = null;
     st.photoMode = true;
     computeBase();
+    applyFit();          // 尺度 + 朝向对齐标定矩形（相机不动）
     resize();
   }
 
@@ -283,6 +342,9 @@
       autoRotate: false,          // 自动环绕开关
       orbitWave: 0,               // 航拍振荡相位
       decor: null,                // C 层动画装饰（AGV/扫描光带）
+      fitScale: 1,                // 照片模式：模型 → 标定矩形的缩放
+      fitFlipY: false,            // 照片模式：A 的世界 +Y 朝下，需翻转
+      fitPos: new THREE.Vector3(0, 0, 0),
       disposed: false, raf: null
     };
 
@@ -319,7 +381,7 @@
         var p = Array.from(pointers.values());
         var d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
         st.zoom = clamp(zoom0 * (d / pinchD0), 0.6, 2.4);
-        if (st.modelGroup) st.modelGroup.scale.setScalar(st.zoom);
+        applyModelTransform();
         if (!st.photoMode) applyCamera();
         return;
       }
@@ -328,7 +390,7 @@
       lx = e.clientX; ly = e.clientY;
       st.rotY += dx * 0.01;                       // 左右：360° 自由转
       st.rotX = clamp(st.rotX + dy * 0.006, -Math.PI / 9, Math.PI / 9); // 上下：±20°
-      if (st.modelGroup) st.modelGroup.rotation.set(st.rotX, st.rotY, 0);
+      applyModelTransform();
     });
 
     function endPointer(e) {
@@ -344,7 +406,7 @@
       if (st.disposed) return;
       e.preventDefault();
       st.zoom = clamp(st.zoom + e.deltaY * 0.0012, 0.6, 2.4);
-      if (st.modelGroup) st.modelGroup.scale.setScalar(st.zoom);
+      applyModelTransform();
       if (!st.photoMode) applyCamera();
     }, { passive: false });
 
@@ -352,7 +414,7 @@
       if (st.disposed) return;
       st.rotY = 0; st.rotX = 0;
       st.zoom = 1;
-      if (st.modelGroup) { st.modelGroup.rotation.set(0, 0, 0); st.modelGroup.scale.setScalar(1); }
+      applyModelTransform();
       if (!st.photoMode) applyCamera();
     });
 
@@ -367,7 +429,7 @@
       if (st.autoRotate) {
         if (!dragging) {
           st.rotY += 0.006;
-          if (st.modelGroup) st.modelGroup.rotation.set(st.rotX, st.rotY, 0);
+          applyModelTransform();
           /* 航拍振荡：环绕时相机高度缓慢起伏 */
           st.orbitWave += 0.008;
           st.camPhi = st._waveBasePhi + Math.sin(st.orbitWave) * 0.07;
@@ -452,7 +514,7 @@
       }
       /* 照片模式：相机不动，把模型转到对应姿态 */
       st.rotY = p.rotY; st.rotX = 0;
-      if (st.modelGroup) st.modelGroup.rotation.set(0, p.rotY, 0);
+      applyModelTransform();
       applyCamera();
     },
     exportPNG: function () { return exportPNG(); },
@@ -469,7 +531,20 @@
     isAutoRotate: function () { return inst ? st.autoRotate : false; },
     replaceModel: function (group) {
       instance();
-      setModel(group, true); // C6：换模型保留当前角度
+      /* C6：换模型保留当前角度；同步参数，保证导出水印 / 降级相机 / 装饰用新方案 */
+      if (group && group.userData) {
+        var u = group.userData;
+        params = {
+          span: u.span != null ? u.span : (params && params.span),
+          capacity: u.capacity != null ? u.capacity : (params && params.capacity),
+          railHeight: u.railHeight != null ? u.railHeight : (params && params.railHeight),
+          productType: u.productType || (params && params.productType),
+          agv: u.agv != null ? u.agv : (params && params.agv)
+        };
+        if (isFinite(u.span)) st.span = u.span;
+        if (isFinite(u.railHeight)) st.railH = u.railHeight;
+      }
+      setModel(group, true);
     },
     dispose: function () {
       if (inst) inst.dispose();

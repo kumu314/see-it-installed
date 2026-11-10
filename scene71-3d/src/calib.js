@@ -53,9 +53,9 @@
     var H=homography(points,w,h);if(!H)return fail("四点退化，无法解单应矩阵");
     var cx=w/2,cy=h/2, a=[H[0]-cx*H[6],H[3]-cy*H[6],H[6]], b=[H[1]-cx*H[7],H[4]-cy*H[7],H[7]];
     var denom=a[2]*b[2], numerator=-(a[0]*b[0]+a[1]*b[1]);
-    if(Math.abs(denom)<1e-12)return fail("透视信息不足，无法估计焦距；请重新选择有两个明显消失方向的矩形");
+    if(Math.abs(denom)<1e-12)return fail("这四点看不出足够的透视。请在地面上选一块面积较大的矩形，斜着拍、前后两条边明显不一样长，左右两组边都要往远处收拢；不要选正对着拍的小梯形。");
     var f2=numerator/denom;
-    if(!finite(f2)||f2<=0)return fail("四点不符合主点居中、方形像素的矩形相机模型");
+    if(!finite(f2)||f2<=0)return fail("这四点不像地面上一块矩形的透视。请选地面上真实存在的矩形（地砖缝、轨道边、设备基础），按顺时针依次点四个角；不要点墙面、横幅，也不要又小又扁的平行四边形。");
     var f=Math.sqrt(f2),fov=2*Math.atan(h/(2*f))*180/Math.PI;
     if(fov<10||fov>140)return fail("估计视场角不合理，请检查选点或镜头畸变");
     var k1=[a[0]/f,a[1]/f,a[2]],k2=[b[0]/f,b[1]/f,b[2]],kt=[(H[2]-cx)/f,(H[5]-cy)/f,1];
