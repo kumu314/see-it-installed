@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>demo_C · 场景壳 stub（能拖能转）</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b1722;color:#cfd8e3;font-family:"Microsoft YaHei",sans-serif;overflow:hidden}
+  #stage{position:absolute;inset:0}
+  #bar{position:absolute;top:10px;left:10px;z-index:10;display:flex;gap:8px;flex-wrap:wrap}
+  button{background:#16222f;border:1px solid #2c3a4a;color:#cfd8e3;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px}
+  button:hover{border-color:#f0a92e;color:#ffd27a}
+  #hint{position:absolute;left:10px;bottom:10px;z-index:10;font-size:12px;color:#5a6b7d;line-height:1.7}
+  #status{position:absolute;top:12px;right:12px;z-index:10;font-size:12px;color:#5aa9c9}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="bar">
+  <button data-p="front">正视</button>
+  <button data-p="side">侧视</button>
+  <button data-p="top">俯视</button>
+  <button data-p="iso">45°</button>
+  <button id="exportBtn">导出 PNG</button>
+</div>
+<div id="status"></div>
+<div id="hint">
+  左右拖 = 360° 自由旋转 ｜ 上下拖 = 俯仰 ±20° ｜ 滚轮/双指 = 缩放（0.6–2.4×）｜ 双击 = 复位正面<br>
+  stub 模式：calib=null + 方块模型（A/B 未接线时的降级验证）
+</div>
+<script src="vendor/three.min.js"></script>
+<script src="src/view3d.js"></script>
+<script>
+(function(){
+  var params = { span: 48, capacity: 2000, railHeight: 30, productType: "gantry", agv: 0 };
+
+  /* stub 模型：A/B 都没交时的最小验证体（方块起重机） */
+  function stubModel(p) {
+    var g = new THREE.Group();
+    var mSteel = new THREE.MeshStandardMaterial({ color: 0xf0a92e, roughness: .55, metalness: .45 });
+    var mTop   = new THREE.MeshStandardMaterial({ color: 0xffc45e, roughness: .42, metalness: .5 });
+    var mDark  = new THREE.MeshStandardMaterial({ color: 0x1b3b56, roughness: .85, metalness: .2 });
+    var k = Math.min(2.2, Math.max(.7, Math.sqrt(p.capacity) / 12));
+    function box(w,h,d,mat,x,y,z){
+      var m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+      m.position.set(x,y,z); g.add(m); return m;
+    }
+    [-1,1].forEach(function(s){
+      box(1.2, p.railHeight, 1.2, mSteel, s*p.span/2, p.railHeight/2, -1.5);
+      box(1.2, p.railHeight, 1.2, mSteel, s*p.span/2, p.railHeight/2,  1.5);
+    });
+    box(p.span+3, 1.8*k, 1.4*k, mTop, 0, p.railHeight+0.9*k, -1.5);
+    box(p.span+3, 1.8*k, 1.4*k, mTop, 0, p.railHeight+0.9*k,  1.5);
+    box(3.4*k, 1.5*k, 3.6*k, mDark, 0, p.railHeight+1.8*k+.8*k, 0);   // 小车
+    var ropeLen = p.railHeight*.5;
+    var rope = new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,ropeLen,6), mSteel);
+    rope.position.set(0, p.railHeight+2.6*k-ropeLen/2, 0); g.add(rope);
+    box(2.6*k, 1.8*k, 2.6*k, mDark, 0, p.railHeight+2.6*k-ropeLen-1*k, 0); // 货物
+    return g;
+  }
+
+  var status = document.getElementById("status");
+  try {
+    var v = WH.view3d.mount(document.getElementById("stage"), {
+      photo: null,        // 没照片 → 示意地面（L2 降级）
+      model: stubModel(params),
+      calib: null,        // A 未交
+      params: params,
+      onChange: function(){}
+    });
+    status.textContent = "WebGL OK · stub 运行中";
+    document.querySelectorAll("#bar button[data-p]").forEach(function(b){
+      b.addEventListener("click", function(){ WH.view3d.preset(b.getAttribute("data-p")); });
+    });
+    document.getElementById("exportBtn").addEventListener("click", function(){
+      var url = WH.view3d.exportPNG();
+      var a = document.createElement("a");
+      a.href = url; a.download = "scene71_demo_C.png"; a.click();
+      status.textContent = "PNG 已导出 " + new Date().toLocaleTimeString();
+    });
+    window.__demoC = { view3d: WH.view3d, stub: stubModel, params: params }; // 验收钩子
+  } catch (err) {
+    status.textContent = "3D 初始化失败：" + err.message;
+    status.style.color = "#ff6b6b";
+  }
+})();
+</script>
+</body>
+</html>
