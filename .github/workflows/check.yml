@@ -41,3 +41,40 @@ jobs:
       - name: 未完成提示
         if: steps.gate.outputs.ready != 'true'
         run: echo "模块未交齐，跳过合成。交齐后本 job 会自动开始校验。"
+
+  build-3d:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 3D 合成（严格模式）
+        run: |
+          set -e
+          node scene71-3d/build.js --strict
+
+      - name: 产物存在且模块已接线
+        run: |
+          set -e
+          test -f "scene71-3d/dist/作品71-3d.html"
+          out="$(node scene71-3d/build.js --strict)"
+          echo "$out"
+          echo "$out" | grep -q "已接线(A)"
+          echo "$out" | grep -q "已接线(B)"
+
+      # 负向自检：门禁本身必须有效。把 model.js 临时挪走，
+      # --strict 应当非零退出；若仍然通过，说明门禁没拦住静默降级。
+      - name: 负向自检（缺 model.js 必须红灯）
+        run: |
+          set -e
+          mv scene71-3d/src/model.js /tmp/model.js.hold
+          if node scene71-3d/build.js --strict >/dev/null 2>&1; then
+            mv /tmp/model.js.hold scene71-3d/src/model.js
+            echo "STRICT 未拦住缺失 model.js，门禁失效"
+            exit 1
+          fi
+          mv /tmp/model.js.hold scene71-3d/src/model.js
+          echo "负向自检通过：缺 model.js 时 --strict 非零退出"
