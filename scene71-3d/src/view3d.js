@@ -53,6 +53,49 @@
     return inst;
   }
 
+  /* ---------- 按实际包围盒反算相机距离 ----------
+   * 旧公式 max(span*1.35, railH*2.6, 24) 只看跨度与轨高：门座机臂架伸出
+   * 30 多米、门式支腿张开、大吨位梁加厚时都会顶出画布（底边像素实测
+   * 有 140 个黄色像素被切）。这里把模型包围盒 8 个角点投到相机的
+   * 右 / 上 / 视线三轴，取能让所有角点落在视锥内的最小距离，留 10% 余量。
+   * modelGroup 已按 st.zoom / fitScale 缩放，结果不要再乘 zoom。 */
+  function fitDistance() {
+    var fallback = Math.max(st.span * 1.35, st.railH * 2.6, 24);
+    if (!camera || !st || !st.modelGroup) return fallback;
+    var box = new THREE.Box3().setFromObject(st.modelGroup);
+    if (box.isEmpty() || !isFinite(box.max.y)) return fallback;
+
+    var phi = st.camPhi, theta = st.camTheta;
+    var dir = new THREE.Vector3(
+      Math.sin(phi) * Math.cos(theta),
+      Math.cos(phi),
+      Math.sin(phi) * Math.sin(theta)
+    ).normalize();                                    // target → 相机
+    var right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), dir);
+    if (right.lengthSq() < 1e-6) right.set(1, 0, 0);  // 正俯视时退化
+    right.normalize();
+    var upv = new THREE.Vector3().crossVectors(dir, right).normalize();
+
+    var aspect = (isFinite(camera.aspect) && camera.aspect > 0) ? camera.aspect : 1;
+    var tanV = Math.tan(camera.fov * Math.PI / 360);
+    var tanH = tanV * aspect;
+    if (!(tanV > 0) || !(tanH > 0)) return fallback;
+
+    var need = 20, corner = new THREE.Vector3();
+    for (var i = 0; i < 8; i++) {
+      corner.set(
+        (i & 1) ? box.max.x : box.min.x,
+        (i & 2) ? box.max.y : box.min.y,
+        (i & 4) ? box.max.z : box.min.z
+      ).sub(st.target);
+      var depth = corner.dot(dir);
+      need = Math.max(need,
+        depth + Math.abs(corner.dot(right)) / tanH,
+        depth + Math.abs(corner.dot(upv)) / tanV);
+    }
+    return need * 1.10;
+  }
+
   /* ---------- 相机（模块级，preset/setOrbit 直接可调） ---------- */
   function applyCamera() {
     if (!camera || !st) return;
@@ -65,7 +108,7 @@
       camera.position.copy(b.pos);
       camera.lookAt(b.look);
     } else {
-      var dist = Math.max(st.span * 1.35, st.railH * 2.6, 24) * st.camRadius * st.zoom;
+      var dist = fitDistance() * st.camRadius;
       var x = dist * Math.sin(st.camPhi) * Math.cos(st.camTheta);
       var y = dist * Math.cos(st.camPhi) + st.target.y;
       var z = dist * Math.sin(st.camPhi) * Math.sin(st.camTheta);
@@ -290,6 +333,8 @@
       tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
       if (tex.updateMatrix) tex.updateMatrix();
     }
+    /* 非照片模式：宽高比变了要按新 aspect 重算取景，否则窄屏仍会裁掉底边 */
+    if (!st.photoMode) applyCamera();
   }
 
   /* ============================================================
