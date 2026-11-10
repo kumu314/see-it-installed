@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>场景 71 · 四形态建模自测（B）</title>
+<style>
+  :root{
+    --bg:#0b1218; --panel:#111a22; --line:#22303c;
+    --txt:#e6eef6; --dim:#8fa2b3; --amber:#ffc45e; --teal:#5aa9c9;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+    font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;overflow:hidden}
+  .wrap{display:flex;flex-direction:column;height:100%}
+
+  .bar{display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    padding:9px 16px;background:linear-gradient(180deg,#131d26,#0d151c);
+    border-bottom:1px solid var(--line);flex:0 0 auto}
+  .brand{font-size:13px;font-weight:800;letter-spacing:.4px;color:var(--amber);white-space:nowrap}
+  .brand em{font-style:normal;color:var(--dim);font-weight:600;margin-left:6px}
+
+  .ctl{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .ctl label{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--dim);white-space:nowrap}
+  .ctl input[type=range]{width:104px;accent-color:var(--amber);cursor:pointer}
+  .ctl b{color:var(--txt);font-variant-numeric:tabular-nums;min-width:38px;text-align:right}
+
+  .seg{display:flex;gap:0;margin-left:auto;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{font-family:inherit;font-size:12px;font-weight:700;padding:5px 11px;
+    background:transparent;color:var(--dim);border:0;cursor:pointer}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button.on{background:rgba(255,196,94,.16);color:var(--amber)}
+  .seg button:hover:not(.on){color:var(--txt)}
+
+  #stage{flex:1 1 auto;min-height:0;position:relative;cursor:grab}
+  #stage:active{cursor:grabbing}
+  #stage canvas{display:block}
+
+  .readout{flex:0 0 auto;padding:7px 16px;font-size:11.5px;color:var(--dim);
+    background:#0d151c;border-top:1px solid var(--line);
+    font-variant-numeric:tabular-nums;line-height:1.5;white-space:pre-wrap}
+  .readout b{color:var(--teal)}
+
+  .hint{position:absolute;left:16px;bottom:14px;font-size:11px;color:#6b7c8c;
+    pointer-events:none;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <div class="brand">场景 71 · B 四形态建模<em>纯建模，不含相机/光源</em></div>
+
+    <div class="ctl">
+      <label>跨度 <input id="span" type="range" min="20" max="80" step="1" value="48"><b id="spanV">48</b>m</label>
+      <label>吨位 <input id="cap" type="range" min="50" max="2000" step="10" value="2000"><b id="capV">2000</b>t</label>
+      <label>轨高 <input id="rail" type="range" min="8" max="60" step="1" value="30"><b id="railV">30</b>m</label>
+      <label>AGV <input id="agv" type="range" min="0" max="8" step="1" value="2"><b id="agvV">2</b>台</label>
+    </div>
+
+    <div class="seg">
+      <button id="mQuad" class="on" type="button">四形态</button>
+      <button id="mCap" type="button">300t vs 2000t</button>
+    </div>
+  </header>
+
+  <div id="stage">
+    <div class="hint">拖动旋转 · 滚轮缩放 · 键盘 1/2/3/4 切视角</div>
+  </div>
+
+  <footer class="readout" id="readout">初始化…</footer>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="src/model.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var stage = document.getElementById("stage");
+  var readout = document.getElementById("readout");
+
+  if (!window.THREE) { readout.textContent = "three.js 未加载：检查 vendor/three.min.js"; return; }
+  if (!window.WH || !WH.model) { readout.textContent = "model.js 未加载：检查 src/model.js"; return; }
+
+  /* ---------------- 渲染器 ---------------- */
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  stage.appendChild(renderer.domElement);
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0b1218);
+  scene.fog = new THREE.Fog(0x0b1218, 320, 780);
+
+  var camera = new THREE.PerspectiveCamera(38, 1, 0.5, 4000);
+
+  /* ---------------- 光照（demo 专用：契约产物里 B 不加光源） ---------------- */
+  scene.add(new THREE.HemisphereLight(0xdfe9f2, 0x1b232c, 0.55));
+
+  var key = new THREE.DirectionalLight(0xfff0d0, 1.3);
+  key.position.set(120, 190, 90);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.camera.left = -260;
+  key.shadow.camera.right = 260;
+  key.shadow.camera.top = 260;
+  key.shadow.camera.bottom = -260;
+  key.shadow.camera.near = 1;
+  key.shadow.camera.far = 900;
+  key.shadow.bias = -0.0006;
+  scene.add(key);
+
+  var fill = new THREE.DirectionalLight(0x5aa9c9, 0.42);
+  fill.position.set(-140, 80, -110);
+  scene.add(fill);
+
+  /* ---------------- 地面与网格（demo 专用） ---------------- */
+  var ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(1600, 1600),
+    new THREE.MeshStandardMaterial({ color: 0x14181e, roughness: 1, metalness: 0 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  var grid = new THREE.GridHelper(1400, 70, 0x2c343f, 0x1f262e);
+  grid.position.y = 0.02;
+  scene.add(grid);
+
+  var root = new THREE.Group();
+  scene.add(root);
+
+  /* ---------------- 相机环绕（demo 自测用，正式版归 C） ---------------- */
+  var orbit = { theta: 0.86, phi: 1.06, radius: 1, target: new THREE.Vector3(0, 12, 0) };
+  var camDist = 150;
+
+  /* 自适应取景：把包围盒 8 个角点投到相机基上，反算「刚好装下」的距离。
+   * 比按间距估算可靠——门座机臂架伸出 30+ 米、四台并排横跨 250 米，
+   * 估算要么裁掉臂架，要么把画面留成一片空地。 */
+  var fitBox = new THREE.Box3();
+  var FIT_MARGIN = 1.05;
+  var _dir = new THREE.Vector3(), _right = new THREE.Vector3(), _upv = new THREE.Vector3();
+  var _corner = new THREE.Vector3(), _worldUp = new THREE.Vector3(0, 1, 0);
+
+  function computeFit() {
+    if (fitBox.isEmpty()) return camDist;
+    _dir.set(
+      Math.sin(orbit.phi) * Math.cos(orbit.theta),
+      Math.cos(orbit.phi),
+      Math.sin(orbit.phi) * Math.sin(orbit.theta)
+    ).normalize();                                   // target → 相机
+    _right.crossVectors(_worldUp, _dir);
+    if (_right.lengthSq() < 1e-6) _right.set(1, 0, 0);   // 正俯视时退化
+    _right.normalize();
+    _upv.crossVectors(_dir, _right).normalize();
+
+    var tanV = Math.tan(camera.fov * Math.PI / 360);
+    var tanH = tanV * camera.aspect;
+    var need = 20;
+    for (var i = 0; i < 8; i++) {
+      _corner.set(
+        (i & 1) ? fitBox.max.x : fitBox.min.x,
+        (i & 2) ? fitBox.max.y : fitBox.min.y,
+        (i & 4) ? fitBox.max.z : fitBox.min.z
+      ).sub(orbit.target);
+      var depth = _corner.dot(_dir);                 // 沿视线的偏移
+      need = Math.max(
+        need,
+        depth + Math.abs(_corner.dot(_right)) / tanH,
+        depth + Math.abs(_corner.dot(_upv)) / tanV
+      );
+    }
+    return need * FIT_MARGIN;
+  }
+
+  function applyCamera() {
+    var r = orbit.radius * computeFit();
+    var sp = Math.sin(orbit.phi), cp = Math.cos(orbit.phi);
+    camera.position.set(
+      orbit.target.x + r * sp * Math.cos(orbit.theta),
+      Math.max(2, orbit.target.y + r * cp),
+      orbit.target.z + r * sp * Math.sin(orbit.theta)
+    );
+    camera.lookAt(orbit.target);
+  }
+
+  function preset(name) {
+    // 正视用 +π/2：此时屏幕右方是 +X，桥式/门式/铸造/门座 从左到右排，
+    // 和读数栏顺序一致；用 -π/2 会左右镜像，截图里对不上号。
+    if (name === "front") { orbit.theta = Math.PI / 2; orbit.phi = 1.34; }
+    else if (name === "side") { orbit.theta = 0; orbit.phi = 1.34; }
+    else if (name === "top") { orbit.theta = -Math.PI / 2; orbit.phi = 0.10; }
+    else { orbit.theta = 0.86; orbit.phi = 1.06; }
+    applyCamera();
+  }
+
+  var dragging = false, lx = 0, ly = 0;
+  var el = renderer.domElement;
+  el.style.touchAction = "none";
+
+  el.addEventListener("pointerdown", function (e) {
+    dragging = true; lx = e.clientX; ly = e.clientY;
+    if (el.setPointerCapture) el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener("pointermove", function (e) {
+    if (!dragging) return;
+    orbit.theta -= (e.clientX - lx) * 0.007;
+    orbit.phi = Math.min(1.48, Math.max(0.08, orbit.phi - (e.clientY - ly) * 0.006));
+    lx = e.clientX; ly = e.clientY;
+    applyCamera();
+  });
+  el.addEventListener("pointerup", function () { dragging = false; });
+  el.addEventListener("pointercancel", function () { dragging = false; });
+  el.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    orbit.radius = Math.min(2.6, Math.max(0.5, orbit.radius + e.deltaY * 0.0011));
+    applyCamera();
+  }, { passive: false });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "1") preset("front");
+    else if (e.key === "2") preset("side");
+    else if (e.key === "3") preset("top");
+    else if (e.key === "4") preset("iso");
+  });
+
+  /* ---------------- 状态与重建 ---------------- */
+  var state = { span: 48, cap: 2000, rail: 30, agv: 2, mode: "quad" };
+
+  function clearRoot() {
+    while (root.children.length) root.remove(root.children[0]);
+  }
+
+  var LABEL = { bridge: "桥式", gantry: "门式", casting: "铸造", portal: "门座机" };
+
+  function rebuild() {
+    clearRoot();
+
+    var list = [];
+    if (state.mode === "quad") {
+      var types = ["bridge", "gantry", "casting", "portal"];
+      var spacing = Math.max(state.span * 1.4, 68);
+      var n = types.length;
+      types.forEach(function (t, i) {
+        list.push({
+          productType: t,
+          span: state.span,
+          capacity: state.cap,
+          railHeight: state.rail,
+          agv: state.agv,
+          x: (i - (n - 1) / 2) * spacing,
+          label: LABEL[t]
+        });
+      });
+      // 让四台整排（含两端半台）都落在水平视锥内，留 12% 余量
+      camDist = spacing * n * 0.88;
+    } else {
+      // 同跨度同轨高，只改吨位：拉近看梁与腿的粗细差
+      list.push({ productType: "gantry", span: 48, capacity: 300, railHeight: 30, agv: 0, x: -38, label: "门式 300t" });
+      list.push({ productType: "gantry", span: 48, capacity: 2000, railHeight: 30, agv: 0, x: 38, label: "门式 2000t" });
+      camDist = 132;
+    }
+
+    var rows = [];
+    var t0 = performance.now();
+    list.forEach(function (it) {
+      var g = WH.model.build(it);
+      g.position.x = it.x;
+      root.add(g);
+      var s = WH.model.stats(g);
+      rows.push(it.label + "  k=" + g.userData.k.toFixed(2) +
+        " · mesh " + s.meshes + " / " + s.triangles + " 面");
+    });
+    var dt = performance.now() - t0;
+
+    // 按实际包围盒自适应取景（见 computeFit）
+    fitBox.setFromObject(root);
+    var center = fitBox.getCenter(new THREE.Vector3());
+    orbit.target.set(center.x, center.y, center.z);
+    applyCamera();
+
+    readout.textContent =
+      rows.join("    ｜    ") +
+      "\n合计 " + list.length + " 台生成 <b>" + dt.toFixed(1) + " ms</b>" +
+      " · 几何体缓存 <b>" + WH.model.cache().geometries + "</b> 个" +
+      " · 预算：单台 ≤ 4 万面 / ≤ 120 mesh / ≤ 50ms";
+  }
+
+  /* ---------------- 控件 ---------------- */
+  function bindSlider(id, keyName, fmt) {
+    var input = document.getElementById(id);
+    var out = document.getElementById(id + "V");
+    function sync() {
+      state[keyName] = Number(input.value);
+      out.textContent = fmt ? fmt(state[keyName]) : state[keyName];
+      rebuild();
+    }
+    input.addEventListener("input", sync);
+    sync();
+  }
+
+  bindSlider("span", "span");
+  bindSlider("cap", "cap");
+  bindSlider("rail", "rail");
+  bindSlider("agv", "agv");
+
+  var btnQuad = document.getElementById("mQuad");
+  var btnCap = document.getElementById("mCap");
+
+  function setMode(m) {
+    state.mode = m;
+    btnQuad.classList.toggle("on", m === "quad");
+    btnCap.classList.toggle("on", m === "cap");
+    // 对比模式固定在正视：两台等距，粗细差才是真差；顺带把 300t 摆到屏幕左侧，
+    // 与读数栏「300t ｜ 2000t」的书写顺序一致，避免看图上分不清谁是谁。
+    if (m === "cap") { orbit.theta = Math.PI / 2; orbit.phi = 1.34; }
+    rebuild();
+  }
+  btnQuad.addEventListener("click", function () { setMode("quad"); });
+  btnCap.addEventListener("click", function () { setMode("cap"); });
+
+  /* ---------------- 尺寸与循环 ---------------- */
+  function resize() {
+    var w = stage.clientWidth || 1;
+    var h = stage.clientHeight || 1;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    applyCamera();
+  }
+  window.addEventListener("resize", resize);
+
+  (function loop() {
+    requestAnimationFrame(loop);
+    renderer.render(scene, camera);
+  })();
+
+  resize();
+  rebuild();
+
+  // 暴露给验收脚本
+  window.__DEMO_B = {
+    state: state,
+    rebuild: rebuild,
+    preset: preset,
+    setMode: setMode,
+    statsAll: function () {
+      var out = [];
+      root.children.forEach(function (g) {
+        var s = WH.model.stats(g);
+        out.push({ type: g.userData.productType, meshes: s.meshes, triangles: s.triangles });
+      });
+      return out;
+    },
+    cache: function () { return WH.model.cache(); },
+
+    /* 单台检视：只放一台，自动取景，配合 spin() 做 360° 检查 */
+    solo: function (type) {
+      clearRoot();
+      var g = WH.model.build({
+        productType: type || "gantry",
+        span: 48, capacity: 2000, railHeight: 30, agv: 2
+      });
+      root.add(g);
+      fitBox.setFromObject(root);
+      var center = fitBox.getCenter(new THREE.Vector3());
+      orbit.target.set(center.x, center.y, center.z);
+      applyCamera();
+
+      // 单台模式下读数栏必须跟着换，否则会留着对比模式那两行「门式 300t / 2000t」，
+      // 看上去像这台门座机只有 34 mesh —— 读数与实际渲染对象不符就是误导。
+      var s = WH.model.stats(g);
+      var ud = g.userData;
+      readout.textContent =
+        "单台 · " + LABEL[ud.productType] + "（" + ud.productType + "）" +
+        "  k=" + ud.k.toFixed(2) +
+        " · mesh " + s.meshes + " / " + s.triangles + " 面" +
+        "\n拖动旋转 / 滚轮缩放 · 预算：单台 ≤ 4 万面 / ≤ 120 mesh / ≤ 50ms";
+      return s;
+    },
+
+    /* 绕 Y 轴转到指定角度（度），用于 360° 完整性检查 */
+    spin: function (deg) {
+      orbit.theta = (deg || 0) * Math.PI / 180;
+      applyCamera();
+    }
+  };
+})();
+</script>
+</body>
+</html>
