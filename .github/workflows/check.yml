@@ -1,0 +1,43 @@
+name: check
+
+# 门禁语义：
+# - 三个模块还没交齐 → 绿（只提示 MISSING，不拦未完成状态）
+# - 交齐了 → 跑合成 + 静态验收，坏了就红
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 模块是否齐全
+        id: gate
+        run: |
+          missing=0
+          for f in src/data.js src/render.js src/ui.js; do
+            if [ ! -f "$f" ]; then echo "MISSING $f"; missing=1; fi
+          done
+          if [ $missing -eq 1 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 合成 + 三项自检
+        if: steps.gate.outputs.ready == 'true'
+        run: node build.js
+
+      - name: 静态验收
+        if: steps.gate.outputs.ready == 'true'
+        run: node scripts/verify.js --offline
+
+      - name: 未完成提示
+        if: steps.gate.outputs.ready != 'true'
+        run: echo "模块未交齐，跳过合成。交齐后本 job 会自动开始校验。"
