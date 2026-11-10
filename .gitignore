@@ -1,5 +1,7 @@
-# 产物备份与临时文件
-dist/*.bak*
+# 产物：由 node build.js 生成，不进仓库（clone 后先 build 一次）
+dist/
+
+# 备份与临时文件
 *.bak-*
 *.tmp
 *.log
