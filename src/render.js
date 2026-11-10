@@ -2,6 +2,34 @@
   "use strict";
   window.WH = window.WH || {};
 
+  /* 示意净距：纯函数，UI 可直接调用。columnSpan 是纵向柱距，
+     columnEnvelope 是横向占位包络，两者不是一个量，不能混用。 */
+  function readParam(object, key) {
+    try { return object == null ? undefined : object[key]; } catch (error) { return undefined; }
+  }
+  function finite(value, fallback, min, max) {
+    return typeof value === "number" && isFinite(value) && value >= min && value <= max ? value : fallback;
+  }
+  function clearanceModel(params) {
+    var input = params && typeof params === "object" ? params : {};
+    var configs = readParam(readParam(window.WH, "DATA"), "configs");
+    var base = Array.isArray(configs) && configs[0] || {};
+    // 上限与 renderScene 保持一致（150m / 5000t / 80m），否则净距读数与画面不同源。
+    var span = finite(readParam(input, "span"), finite(readParam(base, "span"), 22.5, 4, 150), 4, 150);
+    var bay = readParam(input, "bayType");
+    if (bay === undefined) bay = readParam(base, "bayType");
+    var envelope = finite(readParam(input, "columnEnvelope"), bay === "outdoor" ? 0 : 0.46, 0, 100);
+    var gap = Number((span - envelope - 1.5).toPrecision(12));
+    var status = gap < 0 ? "fail" : gap < 1 ? "tight" : "ok";
+    return { span: span, envelope: envelope, gap: gap, status: status,
+      msg: status === "fail" ? "示意占位重叠，需调整跨度或柱列包络" : status === "tight" ?
+        "支腿与柱列净距不足，需调整跨度（示意）" : "示意净距充足；仍需工程复核" };
+  }
+  window.WH.renderClearance = function (params) {
+    var result = clearanceModel(params);
+    return { gap: result.gap, status: result.status, msg: result.msg };
+  };
+
   window.WH.renderScene = function (params) {
     var input = params && typeof params === "object" ? params : {};
     function read(object, key) {
@@ -22,6 +50,11 @@
         return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
       });
     }
+    /* 增强模式是 opt-in：老调用不带这三个字段，输出与旧版逐字一致。 */
+    var requestedProduct = read(input, "productType");
+    var enhanced = requestedProduct !== undefined || read(input, "columnSpan") !== undefined || read(input, "columnEnvelope") !== undefined;
+    var product = ["bridge", "gantry", "casting", "portal"].indexOf(requestedProduct) >= 0 ? requestedProduct : "bridge";
+    var productNames = { bridge: "桥式 · 厂房轨道承托", gantry: "门式 · 落地 A 型支腿", casting: "铸造 · 隔热罩 / 司机室", portal: "门座式 · 四连杆臂架" };
     /* 上限必须覆盖卫华真实产品线：2000t / 60m 跨度 / 45m 轨高。
        原来的 300t/60m/24m 会把 2000t 直接替换成 32t，画出来是台小机器。 */
     var span = value("span", 22.5, 4, 150);
@@ -38,6 +71,8 @@
     var liftT = typeof requestedT === "number" && isFinite(requestedT) ? Math.max(0, Math.min(1, requestedT)) : 1;
     var outdoor = type === "outdoor";
     var doubleBay = type === "double";
+    var clearance = enhanced ? clearanceModel({ span: span, bayType: type, columnEnvelope: read(input, "columnEnvelope") }) : null;
+    var columnSpacing = enhanced ? number(read(input, "columnSpan"), type === "double" ? 12 : 6, 3, 100) : 0;
     var bayCount = doubleBay ? 2 : 1;
     var width = span * bayCount;
     var length = 24;
@@ -49,6 +84,7 @@
     var originX = (800 - (width * 11.3 + length * 6.3) * scale) / 2;
     var originY = 48 + (length * 3.5 + ridge * 9.2) * scale;
     var key = [span, capacity, railHeight, count, type, duty, after].join("|");
+    if (enhanced) key += "|" + product + "|" + columnSpacing + "|" + clearance.envelope;
     var hash = 2166136261;
     for (var k = 0; k < key.length; k++) hash = Math.imul(hash ^ key.charCodeAt(k), 16777619);
     var id = "wh71-" + (hash >>> 0).toString(36) + "-";
@@ -62,6 +98,11 @@
       wall: "#22313d", wallSide: "#293c49", steel: "#566d7b", steelSide: "#344b59",
       steelTop: "#8499a6", line: "#9cabb5", window: "#8aa2b1", accent: "#a7bac6"
     };
+    if (enhanced) {
+      color.bg = "#171d23"; color.floor = "#353c40"; color.floorEdge = "#22292f";
+      color.wall = "#292f35"; color.wallSide = "#30373c"; color.steel = "#7d858a";
+      color.steelSide = "#4e565d"; color.steelTop = "#aeb4b6"; color.accent = "#f2c453";
+    }
     function f(n) { return Math.round(n * 100) / 100; }
     function project(x, y, z) {
       return [f(originX + (x * 11.3 + y * 6.3) * scale), f(originY + (x * 3 - y * 3.5 - z * 9.2) * scale)];
@@ -101,9 +142,10 @@
     }
     var label = (after ? "安装效果" : "现场原貌") + "，" + (outdoor ? "露天堆场" : doubleBay ? "双跨厂房" : "单跨厂房") +
       "，单跨跨度 " + span + " 米" + (after ? "，起重量 " + capacity + " 吨，AGV " + count + " 台" : "，未安装设备") + "，模拟示意";
+    if (enhanced) label += "，" + productNames[product];
     pieces.push('<svg viewBox="0 0 800 400" preserveAspectRatio="xMidYMid slice" role="img" aria-label="' + escape(label) +
       '" data-mode="' + (after ? "after" : "before") + '" data-bay-type="' + type + '" data-span="' + span +
-      '" data-capacity="' + capacity + '" data-rail-height="' + railHeight + '"' + (after ? ' data-t="' + liftT + '"' : "") + ' font-family="Segoe UI, Microsoft YaHei, sans-serif">');
+      '" data-capacity="' + capacity + '" data-rail-height="' + railHeight + '"' + (enhanced ? ' data-product-type="' + product + '"' : "") + (after ? ' data-t="' + liftT + '"' : "") + ' font-family="Segoe UI, Microsoft YaHei, sans-serif">');
     pieces.push("<title>" + escape(label) + "</title><desc>等轴测结构与安装示意。灰色为厂房或场地，金色为起重设备，青色为AGV。全部为演示模拟参数，非工程图。</desc>");
     pieces.push('<defs><linearGradient id="' + id + 'back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="' + color.bg + '"/><stop offset="1" stop-color="#1b303c"/></linearGradient>' +
       '<linearGradient id="' + id + 'floor" x1="0" y1="0" x2="0.8" y2="1"><stop stop-color="' + color.floor + '"/><stop offset="1" stop-color="' + color.floorEdge + '"/></linearGradient>' +
@@ -143,6 +185,11 @@
     path(grid.join(" "), color.grid, 0.65, ' opacity="0.23"');
 
     var columnsY = doubleBay ? [0, 12, 24] : [0, 6, 12, 18, 24];
+    if (enhanced) {
+      columnsY = [];
+      for (var cy = 0; cy < length; cy += columnSpacing) columnsY.push(cy);
+      columnsY.push(length);
+    }
     function drawColumnRow(x) {
       columnsY.forEach(function (y) {
         use("column", x, y, ' data-component="column" data-world-x="' + f(x) + '" data-world-y="' + y + '"');
@@ -281,7 +328,7 @@
       pieces.push("</g>");
     }
     if (after) {
-      for (var cast = 0; cast < bayCount; cast++) shadow(cast * span + span * 0.52, craneY(cast) + 1.5, span * 0.62, 2.1, 0.85);
+      for (var cast = 0; cast < (enhanced ? 1 : bayCount); cast++) shadow(cast * span + span * 0.52, craneY(cast) + 1.5, span * 0.62, 2.1, 0.85);
       var routes = [], routeColors = ["#66dbbf", "#8bb9fc", "#e8c17b", "#d8a8ed"];
       for (var a = 0; a < count; a++) {
         var bi = doubleBay ? a % 2 : 0;
@@ -350,8 +397,154 @@
       }
       pieces.push("</g>");
     }
+    // New product geometry is opt-in. Legacy callers retain their exact SVG bytes.
+    function drawProduct(start, y, index) {
+      var beamHeight = Math.min(2.6, 0.55 + Math.sqrt(capacity) * 0.045) * (product === "casting" ? 1.75 : 1);
+      var spread = 2.1, trolleyX = start + span * 0.56;
+      var upperHook = railHeight * 0.41, hookZ = Math.min(1.7, upperHook) + (upperHook - Math.min(1.7, upperHook)) * liftT;
+      var trolleyZ = railHeight + beamHeight, hookSize = product === "casting" ? 1.55 : 0.85;
+      pieces.push('<g data-component="crane" data-product="' + product + '" data-bay-index="' + index + '">');
+      function aLeg(x, far) {
+        var topY = y + spread / 2, footY = 3.8;
+        pieces.push('<g data-component="a-leg">');
+        box(x - 0.75, topY - footY - 0.3, 0.15, 1.5, footY * 2 + 0.6, 0.65, "#b58321", "#78591e", "#f1c34e");
+        [topY - footY, topY + footY].forEach(function (fy) {
+          line([[x, fy, 0.8], [x, topY, railHeight]], far ? "#9e762a" : "#e0b846", Math.max(3.5, 7 * scale));
+        });
+        line([[x, topY - footY * 0.55, railHeight * 0.46], [x, topY + footY * 0.55, railHeight * 0.46]], "#f3cb65", Math.max(2, 3.5 * scale));
+        pieces.push("</g>");
+      }
+      if (outdoor && (product === "bridge" || product === "casting")) {
+        // An outdoor bridge still needs elevated runway supports, never crane-owned A legs.
+        [start, start + span].forEach(function (x) {
+          [2, 22].forEach(function (sy) {
+            box(x - 0.23, sy - 0.25, 0, 0.46, 0.5, railHeight, color.steel, color.steelSide, color.steelTop,
+              ' data-component="runway-support"');
+          });
+          box(x - 0.4, 1, railHeight - 0.45, 0.8, 22, 0.45, color.steel, color.steelSide, color.steelTop,
+            ' data-component="runway"');
+        });
+      }
+      if (product === "portal") {
+        // Four-bar linkage in a vertical plane: heel -> elbow -> tip -> tie pivot -> heel.
+        var px = start + span * 0.64, py = y + 1.2, baseW = Math.min(5.5, span * 0.22);
+        var deck = railHeight * 0.28, tower = railHeight * 0.7;
+        var heel = [px, py, deck + 0.8], elbow = [start + span * 0.40, py, railHeight * 1.02];
+        var tip = [start + span * 0.12, py, railHeight * 0.9], tie = [px + baseW * 0.24, py, tower];
+        pieces.push('<g data-component="portal-frame">');
+        [px - baseW / 2, px + baseW / 2].forEach(function (x) {
+          box(x - 0.45, py - 3.6, 0.12, 0.9, 7.2, 0.5, "#9c782a", "#695222", "#dfb650");
+          [py - 2.8, py + 2.8].forEach(function (fy) {
+            box(x - 0.35, fy - 0.35, 0.6, 0.7, 0.7, deck - 0.6, "#c49b39", "#8f6e27", "#f4d174");
+          });
+        });
+        box(px - baseW / 2 - 0.35, py - 3, deck, baseW + 0.7, 6, 0.7, "#c29b40", "#876b2d", "#f5d57d");
+        pieces.push("</g>");
+        var turn = project(px, py, deck + 0.85);
+        pieces.push('<ellipse cx="' + turn[0] + '" cy="' + turn[1] + '" rx="' + f(baseW * 4.7 * scale) + '" ry="' + f(baseW * 1.9 * scale) + '" fill="#f5cb5c" stroke="#695125" stroke-width="2" data-component="turntable"/>');
+        box(px - 1.2, py - 1.6, deck + 0.8, 2.4, 3.2, tower - deck, "#d4a638", "#8e6e2b", "#f4d06e");
+        box(px + 0.8, py - 1.7, deck + 1, 1.7, 1.8, 2, "#b28d38", "#6d5729", "#e8c465", ' data-component="cab"');
+        pieces.push('<g data-component="four-bar-linkage">');
+        line([heel, elbow, tip], "#e3b744", Math.max(5, 9 * scale), ' data-component="jib"');
+        line([heel, tie, tip], "#ffe098", Math.max(2, 3.5 * scale), ' data-component="tie-rod"');
+        line([elbow, tie], "#a98437", Math.max(1.7, 2.8 * scale));
+        [heel, elbow, tip, tie].forEach(function (p) {
+          var joint = project(p[0], p[1], p[2]);
+          pieces.push('<circle cx="' + joint[0] + '" cy="' + joint[1] + '" r="' + f(Math.max(2, 3.1 * scale)) + '" fill="#fff0b3" stroke="#735727"/>');
+        });
+        pieces.push("</g>");
+        trolleyX = tip[0]; y = py - 0.35; trolleyZ = tip[2];
+      } else {
+        if (product === "gantry") aLeg(start + 0.75, true);
+        [0, spread].forEach(function (dy) {
+          box(start - 0.25, y + dy, railHeight, span + 0.5, 0.85, beamHeight,
+            dy ? "#bb932e" : "#e3b83f", "#927126", "#ffdc7f", ' data-component="bridge" data-beam-height="' + f(beamHeight) + '"');
+        });
+        [start + 0.75, start + span - 0.75].forEach(function (x) {
+          box(x - 0.75, y - 0.6, railHeight - 0.3, 1.5, spread + 2, 0.6,
+            "#b28a30", "#775e28", "#efd06f", ' data-component="end-carriage"');
+        });
+        var trolleySize = Math.min(3.2, 1 + Math.sqrt(capacity) * 0.055);
+        box(trolleyX - trolleySize / 2, y - 0.2, trolleyZ, trolleySize, spread + 1.4, trolleySize * 0.4,
+          "#e7bb4e", "#9a792e", "#ffe49a", ' data-component="trolley"');
+        if (product === "casting") {
+          box(start + span * 0.16, y - 1.1, railHeight - 3.65, span * 0.28, 4.8, 0.25,
+            "#b9c0bf", "#727e80", "#e3d7ad", ' data-component="heat-shield"');
+          box(start + span * 0.19, y - 3.1, railHeight - 3.4, 2.6, 1.9, 2.7,
+            "#b7974e", "#736343", "#ecd188", ' data-component="cab"');
+          polygon([[start + span * 0.21, y - 3.12, railHeight - 2.5], [start + span * 0.27, y - 3.12, railHeight - 2.5],
+            [start + span * 0.27, y - 3.12, railHeight - 1.2], [start + span * 0.21, y - 3.12, railHeight - 1.2]], "#92c4c9");
+        }
+        if (product === "gantry") aLeg(start + span - 0.75, false);
+      }
+      pieces.push('<g data-component="hoist" data-hook-z="' + f(hookZ) + '" data-lift-t="' + liftT + '">');
+      [-0.18, 0.18].forEach(function (offset) {
+        line([[trolleyX + offset, y + 0.35, trolleyZ], [trolleyX + offset, y + 0.35, hookZ + hookSize]], "#c5ced0", 1.2);
+      });
+      box(trolleyX - hookSize / 2, y, hookZ + 0.25, hookSize, 0.8, hookSize, "#e6b948", "#99772c", "#ffe6a0");
+      var hook = project(trolleyX, y + 0.35, hookZ);
+      path("M" + hook[0] + "," + f(hook[1] - 1) + "v4c0,7 9,7 9,0", "#ffdc86", product === "casting" ? 4.8 : 2.8, ' data-component="hook"');
+      var loadZ = Math.max(0, hookZ - 1.7), cargoSize = Math.min(4, 1.4 + Math.sqrt(capacity) * 0.06);
+      box(trolleyX - cargoSize / 2, y + 0.5, loadZ, cargoSize, 1.7, 1, "#839196", "#536770", "#b1bdc0", ' data-component="load" data-load-z="' + f(loadZ) + '"');
+      line([[trolleyX - cargoSize / 2, y + 0.5, loadZ + 1], [trolleyX, y + 0.35, hookZ - 0.25], [trolleyX + cargoSize / 2, y + 0.5, loadZ + 1]], "#c2cfd0", 1);
+      pieces.push("</g></g>");
+    }
+
+    function drawEnvelopeColumn() {
+      if (clearance.envelope > 0) {
+        box(clearance.envelope - 0.46, craneY(0) - 1.1, 0, 0.46, 0.6, railHeight + 0.4,
+          "#697279", "#424d55", "#a1aaad", ' data-component="clearance-column" data-inner-x="' + f(clearance.envelope) + '"');
+      }
+    }
+    function drawClearance() {
+      var gapColor = { ok: "#83d8ad", tight: "#f3c34f", fail: "#ff7773" }[clearance.status];
+      var left = clearance.envelope, right = span - 1.5, y = craneY(0) - 1.1;
+      var measureY = -3, measureZ = 0.35;
+      pieces.push('<g data-component="clearance-illustration">');
+      // Critical inner column face and end-carriage / leg occupy the same world plane.
+      // The 1.5m envelope is a simplified assumption, not an exact machine bounding box.
+      box(right, y - 0.08, 0.05, 1.5, 0.76, product === "gantry" ? 0.8 : 0.22,
+        "#9e7a2a", "#6e5727", "#e3bc5d", ' data-component="equipment-envelope" data-inner-x="' + f(right) + '"');
+      if (clearance.status !== "ok") {
+        var lo = Math.min(left, right), hi = Math.max(left, right);
+        polygon([[lo, y - 0.15, 0.1], [hi, y - 0.15, 0.1], [hi, y + 1.2, 0.1], [lo, y + 1.2, 0.1]], gapColor,
+          ' opacity="0.42" data-component="' + (clearance.status === "fail" ? "clearance-overlap" : "clearance-warning") + '"');
+        var hatch = [];
+        for (var h = 0; h < 7; h++) {
+          var hx = lo + (hi - lo) * h / 7;
+          hatch.push("M" + point([hx, y - 0.15, 0.12]) + "L" + point([Math.min(hi, hx + 0.3), y + 1.2, 0.12]));
+        }
+        path(hatch.join(" "), gapColor, 1.8, ' data-component="clearance-hatching"');
+        if (clearance.status === "fail") {
+          box(lo, y, railHeight - 0.35, Math.min(hi - lo, 1.5), 0.65, 0.75, "#e75f58", "#963f3e", "#ffaaa0", ' data-component="collision-volume"');
+        }
+      }
+      line([[left, y, measureZ], [left, measureY - 0.7, measureZ]], gapColor, 0.9, ' stroke-dasharray="3 4" opacity="0.8"');
+      line([[right, y, measureZ], [right, measureY - 0.7, measureZ]], gapColor, 0.9, ' stroke-dasharray="3 4" opacity="0.8"');
+      line([[left, measureY, measureZ], [right, measureY, measureZ]], gapColor, 2, ' data-component="clearance-dimension"');
+      var p1 = project(left, measureY, measureZ), p2 = project(right, measureY, measureZ);
+      var vx = p2[0] - p1[0], vy = p2[1] - p1[1], norm = Math.sqrt(vx * vx + vy * vy) || 1;
+      vx /= norm; vy /= norm;
+      [[p1, 1], [p2, -1]].forEach(function (end) {
+        var p = end[0], sign = end[1];
+        path("M" + f(p[0] + sign * vx * 6 - vy * 3) + "," + f(p[1] + sign * vy * 6 + vx * 3) + "L" + p.join(",") +
+          "L" + f(p[0] + sign * vx * 6 + vy * 3) + "," + f(p[1] + sign * vy * 6 - vx * 3), gapColor, 1.7);
+      });
+      // A leader keeps sub-metre labels readable without changing geometry or overlap.
+      var mid = project((left + right) / 2, measureY, measureZ);
+      var lx = Math.max(500, Math.min(660, mid[0])), ly = 337;
+      path("M" + mid.join(",") + "L" + lx + "," + f(ly - 13), gapColor, 1);
+      pieces.push('<rect x="' + f(lx - 85) + '" y="' + f(ly - 15) + '" width="170" height="23" rx="4" fill="#1b242b" stroke="' + gapColor + '"/>');
+      text(lx, ly, "净距 " + clearance.gap.toFixed(2) + " m · 示意", gapColor, 11, ' text-anchor="middle" font-weight="600"');
+      text(778, 48, "柱列占位 " + clearance.envelope.toFixed(2) + " m · 设备占位 1.50 m", "#adb9bf", 9, ' text-anchor="end"');
+      pieces.push("</g>");
+    }
+    if (enhanced) drawEnvelopeColumn();
     for (var bayIndex = 0; bayIndex < bayCount; bayIndex++) {
-      if (after) drawCrane(bayIndex * span, craneY(bayIndex), bayIndex);
+      if (after && (!enhanced || bayIndex === 0)) {
+        if (enhanced) drawProduct(bayIndex * span, craneY(bayIndex), bayIndex);
+        else drawCrane(bayIndex * span, craneY(bayIndex), bayIndex);
+      }
       if (!outdoor) drawColumnRow((bayIndex + 1) * span);
     }
 
@@ -361,12 +554,14 @@
     var dimension = project(span / 2, -5.6, 0.04);
     pieces.push('<rect x="' + f(dimension[0] - 48) + '" y="' + f(dimension[1] - 9) + '" width="96" height="18" rx="3" fill="#101e28"/>');
     text(dimension[0], dimension[1] + 3, (doubleBay ? "单跨 " : "跨度 ") + span.toFixed(1) + " m", after ? "#ffdaa0" : "#b5c7d2", 10, ' text-anchor="middle"');
-    pieces.push('</g><rect x="20" y="18" width="4" height="12" rx="1" fill="' + (after ? "#f4c362" : "#8b9da8") + '"/>');
+    pieces.push('</g>');
+    if (enhanced && after) drawClearance();
+    pieces.push('<rect x="20" y="18" width="4" height="12" rx="1" fill="' + (after ? "#f4c362" : "#8b9da8") + '"/>');
     text(32, 28, after ? "方案安装 · 效果示意" : "客户现场 · 结构示意", "#e0eaf0", 12, ' font-weight="600"');
     text(778, 27, outdoor ? "露天堆场 · 双轨基础" : doubleBay ? "双跨厂房 · 双屋脊天窗" : "单跨厂房 · 桥架 / 门洞", "#b0c3cb", 10, ' text-anchor="end"');
     if (after) {
       text(22, 355, capacity + " t  /  " + duty, "#f8d48a", 12, ' font-weight="600"');
-      text(22, 373, "轨高 " + railHeight.toFixed(1) + " m · " + (outdoor ? "轨道式门机" : capacity <= 10 ? "单梁起重" : doubleBay ? "双跨起重" : "双梁起重"), "#b0c3cd", 10);
+      text(22, 373, "轨高 " + railHeight.toFixed(1) + " m · " + (enhanced ? productNames[product] : outdoor ? "轨道式门机" : capacity <= 10 ? "单梁起重" : doubleBay ? "双跨起重" : "双梁起重"), "#b0c3cd", 10);
       /* 吊装对象随吨位/轨高变化：2000t 门机吊船体分段，32t 桥机吊物料，不该都写「轻载仓储」 */
       var liftTarget = (capacity >= 1000 || railHeight >= 40) ? "船体分段 / 重型构件"
         : (doubleBay && capacity >= 300 ? "钢包 / 铸件"
@@ -378,7 +573,7 @@
     } else {
       text(22, 373, outdoor ? "旧轨痕迹 / 堆料区 · 改造前示意" : "已有厂房结构 / 待安装起重设备", "#a3b7c3", 10);
     }
-    text(400, 393, "模拟示意，非真实设备参数 · 非工程图", "#9fb3be", 9, ' text-anchor="middle"');
+    text(400, 393, enhanced ? "参数及净距均为示意 · 不代表承载 / 抗风 / 精确碰撞结论" : "模拟示意，非真实设备参数 · 非工程图", "#9fb3be", 9, ' text-anchor="middle"');
     pieces.push("</svg>");
     return pieces.join("");
   };
