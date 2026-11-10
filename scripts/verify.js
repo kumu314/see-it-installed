@@ -128,6 +128,9 @@ async function main() {
       appLen: app ? app.innerHTML.length : -1,
       svgs: document.querySelectorAll('svg').length,
       ranges: document.querySelectorAll('input[type=range]').length,
+      dragSignals: document.querySelectorAll(
+        'input[type=range],[role="slider"],[class*="handle"],[class*="slider"],[class*="divider"],[class*="drag"]'
+      ).length,
       buttons: document.querySelectorAll('button').length,
       bodyH: document.body.scrollHeight,
       textLen: (document.body.innerText||'').length
@@ -136,7 +139,9 @@ async function main() {
 
   dom.appLen > 500 ? ok("#app 已渲染", dom.appLen + " chars") : bad("#app 已渲染", "只有 " + dom.appLen + " chars");
   dom.svgs >= 1 ? ok("存在 SVG（对比图）", dom.svgs + " 个") : bad("存在 SVG（对比图）", "0 个");
-  dom.ranges >= 1 ? ok("存在滑块", dom.ranges + " 个") : bad("存在滑块", "0 个");
+  dom.dragSignals >= 1
+    ? ok("存在对比把手（可拖拽信号）", dom.dragSignals + " 个")
+    : bad("存在对比把手（可拖拽信号）", "0 个 · 自定义把手请加 class 含 handle/slider/drag 或 role=slider");
   dom.buttons >= 3 ? ok("按钮 ≥ 3（播放/跳过/全屏）", dom.buttons + " 个") : bad("按钮 ≥ 3（播放/跳过/全屏）", dom.buttons + " 个");
   dom.bodyH > 300 ? ok("页面非白屏", "高度 " + dom.bodyH + "px") : bad("页面非白屏", "高度 " + dom.bodyH + "px");
   dom.textLen > 80 ? ok("有可读文案", dom.textLen + " 字") : bad("有可读文案", dom.textLen + " 字");
