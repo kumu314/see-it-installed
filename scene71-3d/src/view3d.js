@@ -489,7 +489,7 @@
     });
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.font = (fs * 0.8) + 'px "Microsoft YaHei", sans-serif';
-    ctx.fillText("卫华 · 场景71 · 实景安装效果图", pad * 2, pad + fs);
+    ctx.fillText("卫华 · 场景71 · " + (st && st.photoMode ? "照片安装预览" : "3D 示意预览"), pad * 2, pad + fs);
     return out.toDataURL("image/png");
   }
 
@@ -516,6 +516,12 @@
       st.rotY = p.rotY; st.rotX = 0;
       applyModelTransform();
       applyCamera();
+    },
+    // 完整显示：示寏模式按包围盒/默认参数重新取景；照片模式只重算模型贴合，不动相机
+    fit: function () {
+      instance();
+      if (st.photoMode) { applyFit(); }
+      else { st.camRadius = 1; st.zoom = 1; st.rotX = 0; st.rotY = 0; applyModelTransform(); applyCamera(); }
     },
     exportPNG: function () { return exportPNG(); },
     setPhoto: function (photoImg, calibObj) {

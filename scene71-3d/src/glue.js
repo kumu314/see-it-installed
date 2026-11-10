@@ -1,46 +1,37 @@
 /* ============================================================
- * src/glue.js  ·  2D/3D 切换与参数联动（任务 C 接线层）
+ * src/glue.js  ·  2D/3D 接线层
  *
- * 职责：
- *   - 在 2D 产物（data/render/ui）之上注入「3D 实景」视图
- *   - 调 WH.model.build（B 的产物，可选）拿到模型；没有则 stub
- *   - 调 WH.view3d.mount（本任务核心）渲染；WebGL 失败自动回 2D（L3）
- *   - 切方案时重建模型并保留当前旋转角（C6）
- *   - 不碰 ui.js/render.js/data.js 的任何逻辑，只挂自己的 DOM
+ * 职责（W1 后）：
+ *   - 只听 wh71:config 一个事件拿当前方案（与 ui.js 同一份已提交状态）
+ *   - 只听 wh71:viewmode 一个事件决定 2D / 3D 展示
+ *   - 3D 内部工具：方向预设 / 完整显示 / 旋转演示 / 导出
+ *   - WebGL 不可用 → 回 2D，并把这个结果回报给 ui（不静默）
+ *
+ * 契约：不直接读写 ui.js 内部变量，不自己再存一份「当前方案」。
  * ========================================================== */
 (function () {
-  "use strict";
+  'use strict';
 
-  var MODE3D = false;          // 当前是否 3D 模式
-  var curCfgId = null;         // 跟踪当前方案
-  var mounted = false;         // 3D 是否已 mount
-  var hasModelMod = false;     // B 是否已交付
-  var hasCalibMod = false;     // A 是否已交付
-  var savedPhoto = null, savedCalib = null;
+  var MODE3D = false;
+  var curCfg = null;           // 由 wh71:config 推送的已提交方案快照
+  var revision = 0;
+  var mounted = false;
+  var pendingView = null;      // 等待 UI 就绪时缓存的视图请求
   var webglOK = (function () {
     try {
-      var c = document.createElement("canvas");
-      return !!(c.getContext("webgl") || c.getContext("experimental-webgl"));
+      var c = document.createElement('canvas');
+      return !!(c.getContext('webgl') || c.getContext('experimental-webgl'));
     } catch (e) { return false; }
   })();
-
-  function cfg() {
-    var D = window.WH && window.WH.DATA;
-    if (!D || !D.configs) return null;
-    for (var i = 0; i < D.configs.length; i++) {
-      if (D.configs[i].id === curCfgId) return D.configs[i];
-    }
-    return D.configs[0] || null;
-  }
 
   function p3(c) {
     return c ? {
       span: c.span, capacity: c.capacity, railHeight: c.railHeight,
       productType: c.productType, agv: c.agv
-    } : { span: 48, capacity: 2000, railHeight: 30, productType: "gantry" };
+    } : { span: 48, capacity: 2000, railHeight: 30, productType: 'gantry' };
   }
 
-  /* ---------- stub 模型（B 未交付时的降级体） ---------- */
+  /* ---------- stub 模型（model.js 未交付时的降级体） ---------- */
   function stubModel(p) {
     var g = new THREE.Group();
     var mSteel = new THREE.MeshStandardMaterial({ color: 0xf0a92e, roughness: .55, metalness: .45 });
@@ -67,152 +58,148 @@
 
   function buildModel(c) {
     var p = p3(c);
-    if (hasModelMod && window.WH.model && typeof window.WH.model.build === "function") {
-      try { return window.WH.model.build(p); } catch (e) { /* B 建模失败 → stub */ }
+    if (window.WH.model && typeof window.WH.model.build === 'function') {
+      try {
+        var g = window.WH.model.build(p);
+        if (g) return g;
+      } catch (e) { /* 建模失败 → stub，并在状态条标注 */ }
     }
     return stubModel(p);
   }
 
-  /* ---------- DOM 注入 ---------- */
-  function ensureButton() {
-    var bar = document.getElementById("whModebar");
-    if (!bar || document.getElementById("whModeView3d")) return;
-    if (!webglOK) {
-      // WebGL 不可用：不提供 3D 入口（L3 自动保持 2D）
-      var tip = document.createElement("span");
-      tip.style.cssText = "font-size:11px;color:#5a6b7d;margin-left:6px";
-      tip.textContent = "3D 需 WebGL（当前环境不支持）";
-      bar.appendChild(tip);
-      return;
-    }
-    var b = document.createElement("button");
-    b.className = "wh-seg";
-    b.id = "whModeView3d";
-    b.type = "button";
-    b.setAttribute("data-mode", "view3d");
-    b.textContent = "3D 实景";
-    bar.appendChild(b);
-    b.addEventListener("click", function () { enter3D(); });
-    // 单图/并排按钮点下时退回 2D
-    ["whModeSingle", "whModeSbs"].forEach(function (id) {
-      var t = document.getElementById(id);
-      if (t) t.addEventListener("click", function () { exit3D(); });
-    });
+  /* ---------- 3D 容器（工具条 + 画布槽） ---------- */
+  function btnCss(extra) {
+    return 'background:#16222f;border:1px solid #2c3a4a;color:#cfd8e3;padding:8px 12px;min-height:40px;border-radius:8px;cursor:pointer;font-size:12px;font-family:inherit' + (extra || '');
+  }
+  function mkBtn(txt, title) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = txt;
+    if (title) b.title = title;
+    b.style.cssText = btnCss();
+    return b;
   }
 
   function ensureContainer() {
-    var stage = document.getElementById("whCompare");
+    var stage = document.getElementById('whCompare');
     if (!stage) return null;
-    var box = document.getElementById("whView3dBox");
+    var box = document.getElementById('whView3dBox');
     if (box) return box;
-    box = document.createElement("div");
-    box.id = "whView3dBox";
-    box.style.cssText = "position:absolute;inset:0;display:none;z-index:5;background:#0b1722";
-    /* 工具条 */
-    var tools = document.createElement("div");
-    tools.style.cssText = "position:absolute;top:10px;right:10px;z-index:8;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end";
-    [["front", "正视"], ["side", "侧视"], ["top", "俯视"], ["iso", "45°"]].forEach(function (it) {
-      var bt = document.createElement("button");
-      bt.textContent = it[1];
-      bt.style.cssText = btnCss();
-      bt.addEventListener("click", function () { window.WH.view3d.preset(it[0]); });
+    box = document.createElement('div');
+    box.id = 'whView3dBox';
+    box.style.cssText = 'position:absolute;inset:0;display:none;z-index:5;background:#0b1722';
+
+    var tools = document.createElement('div');
+    tools.id = 'wh3dTools';
+    tools.style.cssText = 'position:absolute;top:10px;right:10px;z-index:8;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100% - 20px)';
+
+    [['front', '正视'], ['side', '侧视'], ['top', '俯视'], ['iso', '45°']].forEach(function (it) {
+      var bt = mkBtn(it[1], '切换到' + it[1] + '方向');
+      bt.addEventListener('click', function () {
+        if (window.WH.view3d) window.WH.view3d.preset(it[0]);
+      });
       tools.appendChild(bt);
     });
-    if (hasCalibMod) {
-      var photoBtn = document.createElement("button");
-      photoBtn.id = "wh3dPhoto"; photoBtn.type = "button"; photoBtn.textContent = "实景照片";
-      photoBtn.style.cssText = btnCss();
-      photoBtn.addEventListener("click", function () { if (window.WH.calibUI) window.WH.calibUI.open(); });
-      tools.appendChild(photoBtn);
-    }
-    var orbitBtn = document.createElement("button");
-    orbitBtn.id = "wh3dOrbit"; orbitBtn.type = "button"; orbitBtn.textContent = "环绕";
-    orbitBtn.style.cssText = btnCss(); orbitBtn.setAttribute("aria-pressed", "false");
-    if (typeof window.WH.view3d.setAutoRotate !== "function") { orbitBtn.disabled = true; orbitBtn.title = "3D 环绕模块尚未接入"; }
-    orbitBtn.addEventListener("click", function () {
+
+    var fitBtn = mkBtn('完整显示', '按模型包围盒重新取景');
+    fitBtn.id = 'wh3dFit';
+    fitBtn.addEventListener('click', function () {
       var v = window.WH.view3d;
-      if (!v || typeof v.setAutoRotate !== "function" || typeof v.isAutoRotate !== "function") {
-        orbitBtn.title = "3D 环绕模块尚未接入"; return;
-      }
-      var enabled = !v.isAutoRotate(); v.setAutoRotate(enabled);
-      orbitBtn.classList.toggle("active", enabled);
-      orbitBtn.setAttribute("aria-pressed", String(enabled));
-      orbitBtn.style.borderColor = enabled ? "#f0a92e" : "#2c3a4a";
-      orbitBtn.style.color = enabled ? "#ffd27a" : "#cfd8e3";
+      if (!v) return;
+      if (typeof v.fit === 'function') v.fit();
+      else { v.preset('iso'); v.setOrbit({ radius: 1 }); }
+    });
+    tools.appendChild(fitBtn);
+
+    var orbitBtn = mkBtn('旋转演示', '自动环绕，可随时停止');
+    orbitBtn.id = 'wh3dOrbit';
+    orbitBtn.setAttribute('aria-pressed', 'false');
+    orbitBtn.addEventListener('click', function () {
+      var v = window.WH.view3d;
+      if (!v || typeof v.setAutoRotate !== 'function') return;
+      var enabled = !v.isAutoRotate();
+      v.setAutoRotate(enabled);
+      orbitBtn.setAttribute('aria-pressed', String(enabled));
+      orbitBtn.textContent = enabled ? '停止旋转' : '旋转演示';
+      orbitBtn.style.borderColor = enabled ? '#f0a92e' : '#2c3a4a';
+      orbitBtn.style.color = enabled ? '#ffd27a' : '#cfd8e3';
+      document.dispatchEvent(new CustomEvent('wh71:motion-state', { detail: { rotating: enabled } }));
     });
     tools.appendChild(orbitBtn);
-    var ex = document.createElement("button");
-    ex.textContent = "导出 PNG";
-    ex.style.cssText = btnCss() + "color:#ffd27a;border-color:#f0a92e";
-    ex.addEventListener("click", exportPNG);
+
+    var ex = mkBtn('导出', '导出当前 3D 画面（沟通示意）');
+    ex.style.cssText = btnCss(';color:#ffd27a;border-color:#f0a92e');
+    ex.addEventListener('click', function () {
+      if (window.WH.__openExport) window.WH.__openExport();
+    });
     tools.appendChild(ex);
+
     box.appendChild(tools);
-    var holder = document.createElement("div");
-    holder.id = "whView3dHolder";
-    holder.style.cssText = "position:absolute;inset:0";
+
+    var holder = document.createElement('div');
+    holder.id = 'whView3dHolder';
+    holder.style.cssText = 'position:absolute;inset:0';
     box.appendChild(holder);
-    var hint = document.createElement("div");
-    hint.style.cssText = "position:absolute;left:10px;bottom:8px;z-index:8;font-size:11px;color:#5a6b7d;pointer-events:none";
-    hint.textContent = "左右拖=360°旋转 · 上下拖=俯仰±20° · 滚轮/双指=缩放 · 双击=复位";
+
+    var hint = document.createElement('div');
+    hint.style.cssText = 'position:absolute;left:10px;bottom:8px;z-index:8;font-size:11px;color:#5a6b7d;pointer-events:none';
+    hint.textContent = '左右拖=360°旋转 · 上下拖=俯仰±20° · 滚轮/双指=缩放 · 双击=复位';
     box.appendChild(hint);
+
     stage.appendChild(box);
     return box;
   }
 
-  function btnCss() {
-    return "background:#16222f;border:1px solid #2c3a4a;color:#cfd8e3;padding:8px 12px;min-height:44px;border-radius:4px;cursor:pointer;font-size:12px";
-  }
-
-  function exportPNG() {
-    try {
-      var url = window.WH.view3d.exportPNG();
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = "场景71_实景效果图_" + (curCfgId || "") + ".png";
-      a.click();
-    } catch (e) { /* 导出失败静默 */ }
+  function setActiveBtn() {
+    var b = document.getElementById('whModeModel');
+    if (b) { b.classList.toggle('active', MODE3D); b.setAttribute('aria-pressed', MODE3D ? 'true' : 'false'); }
   }
 
   /* ---------- 进入 / 退出 3D ---------- */
-  function setActiveBtn() {
-    var b = document.getElementById("whModeView3d");
-    if (b) b.classList.toggle("active", MODE3D);
-  }
-
   function enter3D() {
-    if (MODE3D || !webglOK) return;
+    if (MODE3D) return true;
+    if (!webglOK) return false;
     var box = ensureContainer();
-    if (!box) return;
+    if (!box) return false;
+    ['whBefore', 'whAfter', 'whScan', 'whHandle', 'whRange', 'whLegend'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+    box.style.display = 'block';
     MODE3D = true;
     setActiveBtn();
-    ["whBefore", "whAfter", "whScan", "whHandle", "whRange", "whLegend"].forEach(function (id) {
-      var el = document.getElementById(id);
-      if (el) el.style.display = "none";
-    });
-    box.style.display = "block";
-    var holder = document.getElementById("whView3dHolder");
-    var c = cfg();
+    var holder = document.getElementById('whView3dHolder');
     try {
       window.WH.view3d.mount(holder, {
-        photo: savedPhoto,
-        model: buildModel(c),
-        calib: savedCalib,
-        params: p3(c),
+        photo: window.WH.__photo || null,
+        model: buildModel(curCfg),
+        calib: window.WH.__calib || null,
+        params: p3(curCfg),
         onChange: function () {}
       });
       mounted = true;
-      document.dispatchEvent(new CustomEvent("wh71:3d-mounted"));
-      var orbit = document.getElementById("wh3dOrbit");
-      if (orbit) { orbit.setAttribute("aria-pressed", "false"); orbit.classList.remove("active"); orbit.style.borderColor = "#2c3a4a"; orbit.style.color = "#cfd8e3"; }
+      var orbit = document.getElementById('wh3dOrbit');
+      if (orbit) {
+        orbit.setAttribute('aria-pressed', 'false');
+        orbit.textContent = '旋转演示';
+        orbit.style.borderColor = '#2c3a4a';
+        orbit.style.color = '#cfd8e3';
+      }
+      document.dispatchEvent(new CustomEvent('wh71:3d-mounted', { detail: { id: curCfg && curCfg.id } }));
+      document.dispatchEvent(new CustomEvent('wh71:viewmode-changed', { detail: { mode: 'model' } }));
+      return true;
     } catch (e) {
-      /* L3：3D 失败自动回 2D */
-      exit3D();
-      box.style.display = "none";
-      var tip = document.createElement("div");
-      tip.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#f5a524;font-size:14px;z-index:9";
-      tip.textContent = "3D 初始化失败，已回退 2D 视图";
-      box.parentNode.appendChild(tip);
-      setTimeout(function () { tip.remove(); }, 2500);
+      MODE3D = false;
+      mounted = false;
+      setActiveBtn();
+      box.style.display = 'none';
+      ['whBefore', 'whAfter', 'whScan', 'whHandle', 'whRange', 'whLegend'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = '';
+      });
+      document.dispatchEvent(new CustomEvent('wh71:viewmode-changed', { detail: { mode: 'diagram' } }));
+      document.dispatchEvent(new CustomEvent('wh71:3d-error', { detail: { message: (e && e.message) || '3D 初始化失败' } }));
+      return false;
     }
   }
 
@@ -220,49 +207,113 @@
     if (!MODE3D) return;
     MODE3D = false;
     setActiveBtn();
-    var box = document.getElementById("whView3dBox");
-    if (box) box.style.display = "none";
-    if (mounted) { window.WH.view3d.dispose(); mounted = false; }
-    ["whBefore", "whAfter", "whScan", "whHandle", "whRange", "whLegend"].forEach(function (id) {
+    var box = document.getElementById('whView3dBox');
+    if (box) box.style.display = 'none';
+    if (mounted && window.WH.view3d) {
+      try { window.WH.view3d.dispose(); } catch (e) { /* 忽略 */ }
+      mounted = false;
+    }
+    ['whBefore', 'whAfter', 'whScan', 'whHandle', 'whRange', 'whLegend'].forEach(function (id) {
       var el = document.getElementById(id);
-      if (el) el.style.display = "";
+      if (el) el.style.display = '';
     });
+    document.dispatchEvent(new CustomEvent('wh71:viewmode-changed', { detail: { mode: 'diagram' } }));
   }
 
-  /* ---------- 参数联动（C6）：切方案 → 重建模型，保留角度 ---------- */
-  document.addEventListener("click", function (e) {
-    var b = e.target;
-    while (b && b !== document) {
-      if (b.classList && b.classList.contains("wh-scheme")) {
-        var id = b.getAttribute("data-id");
-        if (id && id !== curCfgId) {
-          curCfgId = id;
-          if (MODE3D && mounted) {
-            window.WH.view3d.replaceModel(buildModel(cfg()));
-          }
-        }
-        return;
+  /* ---------- 与 2D 层的事件契约 ---------- */
+  document.addEventListener('wh71:config', function (e) {
+    var d = (e && e.detail) || {};
+    if (!d.config) return;
+    curCfg = d.config;
+    revision = d.revision || 0;
+    if (MODE3D && mounted && window.WH.view3d) {
+      try {
+        window.WH.view3d.replaceModel(buildModel(curCfg));
+        document.dispatchEvent(new CustomEvent('wh71:model-updated', { detail: { id: curCfg.id, revision: revision } }));
+      } catch (err) {
+        document.dispatchEvent(new CustomEvent('wh71:3d-error', { detail: { message: '模型重建失败：' + err.message } }));
       }
-      b = b.parentNode;
     }
-  }, true);
-  document.addEventListener("wh71:photo-calibrated", function (e) {
-    savedPhoto = e.detail.photo; savedCalib = e.detail.calib;
   });
 
-  /* ---------- 启动（ui.js 初始化完成后） ---------- */
+  document.addEventListener('wh71:viewmode', function (e) {
+    var m = e && e.detail && e.detail.mode;
+    if (m === 'model') {
+      if (!enter3D()) {
+        document.dispatchEvent(new CustomEvent('wh71:3d-error', { detail: { message: webglOK ? '3D 容器未就绪' : '当前浏览器不支持 WebGL，已保持 2D' } }));
+      }
+    } else {
+      exit3D();
+    }
+  });
+
+  // 全局暂停：停掉旋转（F12：一个按钮停全部动效）
+  document.addEventListener('wh71:pause', function () {
+    var v = window.WH.view3d;
+    if (v && MODE3D && typeof v.setAutoRotate === 'function') {
+      v.setAutoRotate(false);
+      var orbit = document.getElementById('wh3dOrbit');
+      if (orbit) { orbit.setAttribute('aria-pressed', 'false'); orbit.textContent = '旋转演示'; orbit.style.borderColor = '#2c3a4a'; orbit.style.color = '#cfd8e3'; }
+    }
+  });
+
+  document.addEventListener('wh71:photo-calibrated', function (e) {
+    window.WH.__photo = e.detail.photo;
+    window.WH.__calib = e.detail.calib;
+  });
+
+  /* ---------- 对外：照片 / 导出（供 2D 外壳调用） ---------- */
+  window.WH.photo = {
+    // 照片入口在主面板；标定必须挂在已挂载的 3D 视图上
+    open: function () {
+      if (!webglOK) return { ok: false, reason: '当前浏览器不支持 WebGL，无法启用实景照片' };
+      if (!window.WH.calib || typeof window.WH.calib.fromQuad !== 'function') {
+        return { ok: false, reason: '标定模块未加载' };
+      }
+      if (!MODE3D) {
+        var ok = enter3D();
+        if (!ok) return { ok: false, reason: '3D 初始化失败' };
+      }
+      if (window.WH.calibUI) { window.WH.calibUI.open(); return { ok: true }; }
+      return { ok: false, reason: '标定弹层未就绪' };
+    }
+  };
+
+  window.WH.export3d = function () {
+    if (!MODE3D || !mounted || !window.WH.view3d) return null;
+    return window.WH.view3d.exportPNG();
+  };
+
+  /* ---------- 启动 ---------- */
   function boot() {
-    hasModelMod = !!(window.WH && window.WH.model && typeof window.WH.model.build === "function");
-    hasCalibMod = !!(window.WH && window.WH.calib);
     var D = window.WH && window.WH.DATA;
-    curCfgId = (D && D.configs && D.configs[0] && D.configs[0].id) || null;
-    ensureButton();
-    window.__scene71_3d = { enter: enter3D, exit: exit3D, state: function () { return { mode3d: MODE3D, mounted: mounted, cfg: curCfgId, webgl: webglOK }; } };
+    if (D && D.configs && D.configs[0] && !curCfg) curCfg = D.configs[0];
+    var modelBtn = document.getElementById('whModeModel');
+    if (modelBtn && !webglOK) {
+      modelBtn.disabled = true;
+      modelBtn.title = '当前浏览器不支持 WebGL，仅保留 2D 视图';
+    }
+    ensureContainer();
+    window.__scene71_3d = {
+      enter: enter3D,
+      exit: exit3D,
+      state: function () {
+        var st = (mounted && window.WH.view3d) ? null : null;
+        return {
+          mode3d: MODE3D, mounted: mounted, cfg: curCfg && curCfg.id,
+          revision: revision, webgl: webglOK,
+          model: (function () {
+            var h = document.getElementById('whView3dHolder');
+            var v = h && h.__view3d;
+            return v && v._st && v._st.modelGroup ? v._st.modelGroup.uuid : null;
+          })()
+        };
+      }
+    };
+    if (pendingView) { var pv = pendingView; pendingView = null; if (pv === 'model') enter3D(); }
+    document.dispatchEvent(new CustomEvent('wh71:glue-ready'));
   }
 
-  if (document.readyState === "complete") {
-    setTimeout(boot, 0);
-  } else {
-    window.addEventListener("load", function () { setTimeout(boot, 50); });
-  }
+  if (document.readyState === 'complete') setTimeout(boot, 0);
+  else window.addEventListener('load', function () { setTimeout(boot, 30); });
 })();

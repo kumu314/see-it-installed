@@ -60,7 +60,7 @@ let out = tpl
 const urls = (out.match(/https?:\/\/[^"\s)'"]+/g) || [])
   .filter(u => !/w3\.org|threejs\.org|github\.com\/mrdoob|mrdoob\.com|discourse\.threejs|donmccurdy/.test(u));
 const badSrc = /<script[^>]+src=|<link[^>]+href=|@import\s+url\(/.test(out);
-const missing = ["WH.DATA", "WH.view3d", "renderScene", "initUI", "whModeView3d"]
+const missing = ["WH.DATA", "WH.view3d", "renderScene", "initUI", "whModeModel"]
   .filter(k => out.indexOf(k) === -1);
 const size = Buffer.byteLength(out);
 

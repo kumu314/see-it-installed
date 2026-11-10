@@ -235,6 +235,21 @@
     return out;
   }
 
+  /* ---------- 单套参数校验（W3：手输参数/自定义方案共用一套范围，不在 UI 重复写） ----------
+     返回 [{ field, message }]；空数组 = 通过。 */
+  function validateConfig(c) {
+    var out = [];
+    function bad(field, message) { out.push({ field: field, message: message }); }
+    if (!c || typeof c !== "object") { bad("config", "缺少参数对象"); return out; }
+    if (!isNum(c.span) || !(c.span > 0) || !(c.span < 150)) bad("span", "跨度需为 0–150 米之间的数字");
+    if (!isNum(c.capacity) || !(c.capacity > 0) || !(c.capacity < 5000)) bad("capacity", "起重量需为 0–5000 吨之间的数字");
+    if (!isNum(c.railHeight) || !(c.railHeight > 0) || !(c.railHeight < 80)) bad("railHeight", "轨高需为 0–80 米之间的数字");
+    if (!isNum(c.agv) || c.agv < 0 || c.agv > 20) bad("agv", "AGV 数量需为 0–20 的整数");
+    if (["A5", "A6", "A7", "A8"].indexOf(c.duty) === -1) bad("duty", "工作级别需在 A5–A8 之间");
+    if (!c.model || !String(c.model).trim()) bad("model", "方案名称不能为空");
+    return out;
+  }
+
   function format(config) {
     var c = config && typeof config === 'object' ? config : configs[0];
     var agv = pick(c.agv, configs[0].agv);
@@ -287,6 +302,7 @@
 
     match: match,
     __validate: validate,
+    validateConfig: validateConfig,
     format: format
   };
 })();
