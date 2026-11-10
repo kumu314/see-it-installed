@@ -16,6 +16,7 @@
   var mounted = false;         // 3D 是否已 mount
   var hasModelMod = false;     // B 是否已交付
   var hasCalibMod = false;     // A 是否已交付
+  var savedPhoto = null, savedCalib = null;
   var webglOK = (function () {
     try {
       var c = document.createElement("canvas");
@@ -117,6 +118,29 @@
       bt.addEventListener("click", function () { window.WH.view3d.preset(it[0]); });
       tools.appendChild(bt);
     });
+    if (hasCalibMod) {
+      var photoBtn = document.createElement("button");
+      photoBtn.id = "wh3dPhoto"; photoBtn.type = "button"; photoBtn.textContent = "实景照片";
+      photoBtn.style.cssText = btnCss();
+      photoBtn.addEventListener("click", function () { if (window.WH.calibUI) window.WH.calibUI.open(); });
+      tools.appendChild(photoBtn);
+    }
+    var orbitBtn = document.createElement("button");
+    orbitBtn.id = "wh3dOrbit"; orbitBtn.type = "button"; orbitBtn.textContent = "环绕";
+    orbitBtn.style.cssText = btnCss(); orbitBtn.setAttribute("aria-pressed", "false");
+    if (typeof window.WH.view3d.setAutoRotate !== "function") { orbitBtn.disabled = true; orbitBtn.title = "3D 环绕模块尚未接入"; }
+    orbitBtn.addEventListener("click", function () {
+      var v = window.WH.view3d;
+      if (!v || typeof v.setAutoRotate !== "function" || typeof v.isAutoRotate !== "function") {
+        orbitBtn.title = "3D 环绕模块尚未接入"; return;
+      }
+      var enabled = !v.isAutoRotate(); v.setAutoRotate(enabled);
+      orbitBtn.classList.toggle("active", enabled);
+      orbitBtn.setAttribute("aria-pressed", String(enabled));
+      orbitBtn.style.borderColor = enabled ? "#f0a92e" : "#2c3a4a";
+      orbitBtn.style.color = enabled ? "#ffd27a" : "#cfd8e3";
+    });
+    tools.appendChild(orbitBtn);
     var ex = document.createElement("button");
     ex.textContent = "导出 PNG";
     ex.style.cssText = btnCss() + "color:#ffd27a;border-color:#f0a92e";
@@ -136,7 +160,7 @@
   }
 
   function btnCss() {
-    return "background:#16222f;border:1px solid #2c3a4a;color:#cfd8e3;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px";
+    return "background:#16222f;border:1px solid #2c3a4a;color:#cfd8e3;padding:8px 12px;min-height:44px;border-radius:4px;cursor:pointer;font-size:12px";
   }
 
   function exportPNG() {
@@ -170,17 +194,18 @@
     var c = cfg();
     try {
       window.WH.view3d.mount(holder, {
-        photo: null,           // A 未接线时降级示意地面（L2）
+        photo: savedPhoto,
         model: buildModel(c),
-        calib: hasCalibMod ? (window.WH.calib && window.WH.calib._last) || null : null,
+        calib: savedCalib,
         params: p3(c),
         onChange: function () {}
       });
       mounted = true;
+      document.dispatchEvent(new CustomEvent("wh71:3d-mounted"));
+      var orbit = document.getElementById("wh3dOrbit");
+      if (orbit) { orbit.setAttribute("aria-pressed", "false"); orbit.classList.remove("active"); orbit.style.borderColor = "#2c3a4a"; orbit.style.color = "#cfd8e3"; }
     } catch (e) {
       /* L3：3D 失败自动回 2D */
-      MODE3D = false;
-      setActiveBtn();
       exit3D();
       box.style.display = "none";
       var tip = document.createElement("div");
@@ -221,6 +246,9 @@
       b = b.parentNode;
     }
   }, true);
+  document.addEventListener("wh71:photo-calibrated", function (e) {
+    savedPhoto = e.detail.photo; savedCalib = e.detail.calib;
+  });
 
   /* ---------- 启动（ui.js 初始化完成后） ---------- */
   function boot() {
