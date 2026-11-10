@@ -65,6 +65,12 @@
       .replace(/\{renderSec\}/g, num(c.renderSec))
       .replace(/\{matchCount\}/g, m && m.count ? String(m.count) : "6")
       .replace(/\{matchScore\}/g, m && typeof m.score === "number" ? String(Math.round(m.score * 100)) : "—")
+      /* 第三步用：命中库内哪一套（切方案时实时变化，比"100%"更有说服力） */
+      .replace(/\{hitName\}/g, (function () {
+        var s = c.scene || "";
+        if (s.length > 8) s = s.split("/")[0].trim();   // 卡片窄，长场景名截到第一段
+        return c.id + (s ? " · " + s : "");
+      })())
       .replace(/\{[a-zA-Z]+\}/g, "");
   }
 
