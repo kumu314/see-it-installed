@@ -27,9 +27,13 @@
     var railHeight = value("railHeight", 9, 3, 24);
     var count = Math.floor(value("agv", 2, 0, 8));
     var requestedBay = read(input, "bayType");
-    var type = validBay(requestedBay) ? requestedBay : requestedBay === undefined && validBay(read(base, "bayType")) ? base.bayType : "single";
-    var duty = validDuty(read(input, "duty")) ? input.duty : validDuty(read(base, "duty")) ? base.duty : "A5";
+    var baseBay = read(base, "bayType");
+    var type = validBay(requestedBay) ? requestedBay : requestedBay === undefined && validBay(baseBay) ? baseBay : "single";
+    var requestedDuty = read(input, "duty"), baseDuty = read(base, "duty");
+    var duty = validDuty(requestedDuty) ? requestedDuty : validDuty(baseDuty) ? baseDuty : "A5";
     var after = read(input, "mode") !== "before";
+    var requestedT = after ? read(input, "t") : undefined;
+    var liftT = typeof requestedT === "number" && isFinite(requestedT) ? Math.max(0, Math.min(1, requestedT)) : 1;
     var outdoor = type === "outdoor";
     var doubleBay = type === "double";
     var bayCount = doubleBay ? 2 : 1;
@@ -96,7 +100,7 @@
       "，单跨跨度 " + span + " 米" + (after ? "，起重量 " + capacity + " 吨，AGV " + count + " 台" : "，未安装设备") + "，模拟示意";
     pieces.push('<svg viewBox="0 0 800 400" preserveAspectRatio="xMidYMid slice" role="img" aria-label="' + escape(label) +
       '" data-mode="' + (after ? "after" : "before") + '" data-bay-type="' + type + '" data-span="' + span +
-      '" data-capacity="' + capacity + '" data-rail-height="' + railHeight + '" font-family="Segoe UI, Microsoft YaHei, sans-serif">');
+      '" data-capacity="' + capacity + '" data-rail-height="' + railHeight + '"' + (after ? ' data-t="' + liftT + '"' : "") + ' font-family="Segoe UI, Microsoft YaHei, sans-serif">');
     pieces.push("<title>" + escape(label) + "</title><desc>等轴测结构与安装示意。灰色为厂房或场地，金色为起重设备，青色为AGV。全部为演示模拟参数，非工程图。</desc>");
     pieces.push('<defs><linearGradient id="' + id + 'back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="' + color.bg + '"/><stop offset="1" stop-color="#1b303c"/></linearGradient>' +
       '<linearGradient id="' + id + 'floor" x1="0" y1="0" x2="0.8" y2="1"><stop stop-color="' + color.floor + '"/><stop offset="1" stop-color="' + color.floorEdge + '"/></linearGradient>' +
@@ -298,7 +302,11 @@
       var spread = singleBeam ? 0 : 2.05;
       var trolleyX = start + span * 0.56;
       var trolleySize = 0.8 + Math.sqrt(capacity) * 0.08;
-      var hookZ = railHeight * 0.41;
+      var upperHook = railHeight * 0.41;
+      // The load rests on the floor at t=0; the rigging keeps the hook above it.
+      // t=1 preserves the original default hook position for existing callers.
+      var lowerHook = Math.min(1.7, upperHook);
+      var hookZ = lowerHook + (upperHook - lowerHook) * liftT;
       var cargoSize = 1.4 + Math.sqrt(capacity) * 0.11;
       pieces.push('<g data-component="crane" data-bay-index="' + index + '">');
       if (outdoor) {
@@ -316,13 +324,13 @@
       });
       var trolleyZ = railHeight + beamHeight;
       box(trolleyX - trolleySize / 2, y - 0.2, trolleyZ, trolleySize, spread + 1.4, trolleySize * 0.46, "#eac162", "#a07129", "#ffe5a5");
-      pieces.push('<g data-component="hoist" data-hook-z="' + f(hookZ) + '">');
+      pieces.push('<g data-component="hoist" data-hook-z="' + f(hookZ) + '" data-lift-t="' + liftT + '">');
       line([[trolleyX - 0.18, y + 0.35, trolleyZ], [trolleyX - 0.18, y + 0.35, hookZ + 0.55]], "#c2cfd0", 1.1);
       line([[trolleyX + 0.18, y + 0.35, trolleyZ], [trolleyX + 0.18, y + 0.35, hookZ + 0.55]], "#839ba2", 1.1);
       box(trolleyX - 0.38, y, hookZ + 0.25, 0.76, 0.7, 0.65, "#edbd56", "#a47329", "#ffe3a0");
       var hook = project(trolleyX, y + 0.35, hookZ);
       path("M" + hook[0] + "," + f(hook[1] - 1) + "v4c0,7 9,7 9,0", "#f6cf7b", f(2 + Math.sqrt(capacity) * 0.17), ' data-component="hook"');
-      var loadZ = Math.max(0.2, hookZ - 1.7);
+      var loadZ = Math.max(0, hookZ - 1.7);
       box(trolleyX - cargoSize / 2, y + 0.5, loadZ, cargoSize, 1.7, 1, "#738994", "#415d69", "#a0b2b8", ' data-component="load" data-load-z="' + f(loadZ) + '"');
       line([[trolleyX - cargoSize / 2, y + 0.5, loadZ + 1], [trolleyX, y + 0.35, hookZ - 0.25], [trolleyX + cargoSize / 2, y + 0.5, loadZ + 1]], "#b3c5c8", 1);
       pieces.push("</g>");
@@ -359,5 +367,14 @@
     text(400, 393, "模拟示意，非真实设备参数 · 非工程图", "#9fb3be", 9, ' text-anchor="middle"');
     pieces.push("</svg>");
     return pieces.join("");
+  };
+  window.WH.__bench = function () {
+    var now = typeof performance === "object" && typeof performance.now === "function"
+      ? function () { return performance.now(); } : function () { return Date.now(); };
+    var start = now();
+    for (var i = 0; i < 100; i++) {
+      window.WH.renderScene({ span: 22.5, capacity: 32, railHeight: 9, duty: "A5", agv: 2, bayType: "single", mode: "after" });
+    }
+    return (now() - start) / 100;
   };
 })();
