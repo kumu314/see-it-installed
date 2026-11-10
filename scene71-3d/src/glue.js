@@ -265,6 +265,56 @@
     document.dispatchEvent(new CustomEvent('wh71:viewmode-changed', { detail: { mode: 'diagram' } }));
   }
 
+  /* ---------- 前后对比（A18）：原图层 + 裁剪 3D 叠加 ---------- */
+  var BA = { on: false, pos: 50, layer: null, bar: null };
+
+  function ensureBaLayer() {
+    var stage = document.getElementById("whCompare");
+    if (!stage || BA.layer) return;
+    var img = document.createElement("img");
+    img.id = "whBaPhoto";
+    img.alt = "现场原图";
+    img.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:4;display:none";
+    stage.appendChild(img);
+    BA.layer = img;
+
+    var bar = document.createElement("div");
+    bar.id = "whBaBar";
+    bar.style.cssText = "position:absolute;left:0;right:0;bottom:0;z-index:9;display:none;align-items:center;gap:10px;padding:9px 14px;background:rgba(8,12,18,.78);border-top:1px solid #24333f";
+    bar.innerHTML = "<span style=\"font-size:11px;color:#9fb0c2;white-space:nowrap\">原图</span>" +
+      "<input id=\"whBaRange\" type=\"range\" min=\"0\" max=\"100\" value=\"50\" step=\"1\" style=\"flex:1;accent-color:#f5b544\" aria-label=\"前后对比滑块\">" +
+      "<span style=\"font-size:11px;color:#ffd27a;white-space:nowrap\">安装预览</span>";
+    stage.appendChild(bar);
+    BA.bar = bar;
+    bar.querySelector("#whBaRange").addEventListener("input", function (e) {
+      BA.pos = Number(e.target.value);
+      applyBa();
+    });
+  }
+
+  function applyBa() {
+    var box = document.getElementById("whView3dBox");
+    if (!box) return;
+    box.style.clipPath = BA.on ? ("inset(0 0 0 " + BA.pos + "%)") : "";
+    box.style.webkitClipPath = box.style.clipPath;
+  }
+
+  function setBeforeAfter(on) {
+    BA.on = !!on;
+    ensureBaLayer();
+    if (!BA.layer) return;
+    if (BA.on) {
+      if (window.WH.__photo && window.WH.__photo.src) BA.layer.src = window.WH.__photo.src;
+      BA.layer.style.display = "block";
+      BA.bar.style.display = "flex";
+      applyBa();
+    } else {
+      BA.layer.style.display = "none";
+      BA.bar.style.display = "none";
+      var box = document.getElementById("whView3dBox");
+      if (box) { box.style.clipPath = ""; box.style.webkitClipPath = ""; }
+    }
+  }
   /* ---------- 与 2D 层的事件契约 ---------- */
   document.addEventListener('wh71:config', function (e) {
     var d = (e && e.detail) || {};
@@ -283,11 +333,13 @@
 
   document.addEventListener('wh71:viewmode', function (e) {
     var m = e && e.detail && e.detail.mode;
-    if (m === 'model') {
+    if (m === 'model' || m === 'beforeafter') {
+      setBeforeAfter(m === 'beforeafter');
       if (!enter3D()) {
         document.dispatchEvent(new CustomEvent('wh71:3d-error', { detail: { message: webglOK ? '3D 容器未就绪' : '当前浏览器不支持 WebGL，已保持 2D' } }));
       }
     } else {
+      setBeforeAfter(false);
       exit3D();
     }
   });
