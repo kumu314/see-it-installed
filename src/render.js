@@ -211,6 +211,11 @@
       pieces.push("</g>");
     } else {
       pieces.push('<g data-component="yard">');
+      if (!after) {
+        [span * 0.12, span * 0.88].forEach(function (x) {
+          line([[x, 2.5, 0.03], [x, 21.5, 0.03]], "#14252e", 1.7, ' stroke-dasharray="6 5" opacity="0.82" data-component="old-rail-trace"');
+        });
+      }
       [0, span].forEach(function (x) {
         box(x - 0.8, 0, 0, 1.6, length, 0.16, "#465b63", "#2f454e", "#7a8e94", ' data-component="rail-foundation"');
         var sleepers = [];
@@ -360,9 +365,10 @@
       text(22, 355, capacity + " t  /  " + duty, "#f8d48a", 12, ' font-weight="600"');
       text(22, 373, "轨高 " + railHeight.toFixed(1) + " m · " + (outdoor ? "轨道式门机" : capacity <= 10 ? "单梁起重" : doubleBay ? "双跨起重" : "双梁起重"), "#b0c3cd", 10);
       text(778, 355, count ? "吊装 → AGV 搬运 → 入库" : "吊装 → 轻载仓储", "#bdd6d4", 10, ' text-anchor="end"');
-      text(778, 373, "AGV " + count + " 台 · " + (count ? count + " 条路线 / 起点圆点 · 终点方块" : "未配置自动搬运"), "#98b0bc", 9, ' text-anchor="end"');
+      var routeText = count ? (outdoor ? "多段路线 · 起吊点 → 终点" : count + " 条路线 / 起点圆点 · 终点方块") : "未配置自动搬运";
+      text(778, 373, "AGV " + count + " 台 · " + routeText, "#98b0bc", 9, ' text-anchor="end"');
     } else {
-      text(22, 373, outdoor ? "轨道基础 / 堆料区 · 待安装门机" : "已有厂房结构 / 待安装起重设备", "#a3b7c3", 10);
+      text(22, 373, outdoor ? "旧轨痕迹 / 堆料区 · 改造前示意" : "已有厂房结构 / 待安装起重设备", "#a3b7c3", 10);
     }
     text(400, 393, "模拟示意，非真实设备参数 · 非工程图", "#9fb3be", 9, ' text-anchor="middle"');
     pieces.push("</svg>");
