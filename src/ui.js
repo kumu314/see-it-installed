@@ -30,6 +30,7 @@
   var sbs = false;         // 并排模式
   var briefOpen = false;
   var inited = false;
+  var envelopeMode = "ok";   // 示意净距三态：ok / tight / fail
 
   var $ = {};              // DOM 引用
 
@@ -254,6 +255,17 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
 .wh-pk{font-size:clamp(11px,.9vw,13.5px);color:#8fa0b2;white-space:nowrap}
 .wh-pv{font-size:clamp(12.5px,1.05vw,16px);font-weight:800;color:#f2f6fa;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
 .wh-pv.flash{animation:wh-pvflash .55s ease}
+.wh-gapbar{display:flex;align-items:center;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid #2b3541;flex-wrap:wrap}
+.wh-gapbar[hidden]{display:none}
+.wh-gap-k{font-size:clamp(10.5px,.84vw,12px);color:#8fa0b2;white-space:nowrap}
+.wh-gap-seg{display:flex;gap:4px}
+.wh-gap-btn{font-family:inherit;font-size:clamp(10.5px,.84vw,12px);font-weight:700;color:#9fb0c2;background:#1a212b;border:1px solid #2c3745;border-radius:7px;padding:4px 9px;cursor:pointer;white-space:nowrap}
+.wh-gap-btn:hover{color:#e8eef5;border-color:#3a4757}
+.wh-gap-btn.active{color:#12161c;background:linear-gradient(135deg,#ffc24b,#f59a1f);border-color:transparent}
+.wh-gap-v{margin-left:auto;font-size:clamp(10.5px,.84vw,12px);font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+.wh-gap-v[data-s="ok"]{color:#83d8ad}
+.wh-gap-v[data-s="tight"]{color:#f3c34f}
+.wh-gap-v[data-s="fail"]{color:#ff7773}
 @keyframes wh-pvflash{0%{color:#7ef0d3;transform:scale(1.1)}100%{color:#f2f6fa;transform:none}}
 
 .wh-schemes{display:grid;grid-template-columns:1fr 1fr;gap:7px}
@@ -359,6 +371,15 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
             '<button class="wh-seg" id="whModeSbs" type="button" data-mode="sbs">并排对比</button>' +
           '</div>' +
           '<div class="wh-params" id="whParams"></div>' +
+          '<div class="wh-gapbar" id="whGapbar" hidden>' +
+            '<span class="wh-gap-k">示意净距</span>' +
+            '<div class="wh-gap-seg" id="whGapSeg">' +
+              '<button class="wh-gap-btn active" type="button" data-gap="ok">充足</button>' +
+              '<button class="wh-gap-btn" type="button" data-gap="tight">临界</button>' +
+              '<button class="wh-gap-btn" type="button" data-gap="fail">不足</button>' +
+            '</div>' +
+            '<span class="wh-gap-v" id="whGapV" data-s="ok">—</span>' +
+          '</div>' +
         '</section>' +
         '<section class="wh-panel">' +
           '<div class="wh-panel-h"><span>方案库</span><span class="wh-hint">点选切换整套参数与效果图</span></div>' +
@@ -423,6 +444,56 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
       '</div>';
   }
 
+  /* ---------------- 示意净距三态 ----------------
+   * 依赖 render.js 的纯函数 WH.renderClearance()。没有它时控件整体隐藏，
+   * 不留下按了没反应的死按钮。columnEnvelope 由按钮档位按当前跨度反算：
+   * gap = span - envelope - 1.5，tight 取 0.5 m，fail 取 -2 m。 */
+  function gapEnvelope(c) {
+    if (envelopeMode === "ok") return undefined;   // 交给 render 走缺省包络
+    var sp = (c && typeof c.span === "number" && isFinite(c.span)) ? c.span : 22.5;
+    if (envelopeMode === "tight") return Math.max(0, sp - 2.0);
+    return Math.min(100, sp + 0.5);
+  }
+  function clearanceOf(c) {
+    if (!window.WH || typeof window.WH.renderClearance !== "function") return null;
+    try {
+      return window.WH.renderClearance({
+        span: c.span, bayType: c.bayType, columnEnvelope: gapEnvelope(c)
+      });
+    } catch (e) { return null; }
+  }
+  function updateGapReadout() {
+    if (!$.gapEl || !$.gapV || !cfg) return;
+    var r = clearanceOf(cfg);
+    if (!r) { $.gapEl.hidden = true; return; }
+    $.gapEl.hidden = false;
+    $.gapV.setAttribute("data-s", r.status);
+    $.gapV.textContent = "净距 " + r.gap.toFixed(2) + " m · " +
+      (r.status === "ok" ? "充足" : r.status === "tight" ? "临界" : "不足");
+    $.gapV.title = r.msg;
+    if ($.gapSeg) {
+      var btns = $.gapSeg.querySelectorAll(".wh-gap-btn");
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle("active", btns[i].getAttribute("data-gap") === envelopeMode);
+      }
+    }
+  }
+  function bindGap() {
+    if (!$.gapSeg) return;
+    $.gapSeg.addEventListener("click", function (e) {
+      var b = e.target;
+      while (b && b !== $.gapSeg) {
+        if (b.getAttribute && b.getAttribute("data-gap")) {
+          envelopeMode = b.getAttribute("data-gap");
+          updateGapReadout();
+          renderStage();
+          return;
+        }
+        b = b.parentNode;
+      }
+    });
+  }
+
   /* ---------------- 状态同步 ---------------- */
   function updateParams() {
     var cells = $.paramsEl.querySelectorAll(".wh-pv");
@@ -481,10 +552,19 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
     var s = null;
     try {
       if (window.WH && typeof window.WH.renderScene === "function") {
-        s = window.WH.renderScene({
+        var pr = {
           span: c.span, capacity: c.capacity, railHeight: c.railHeight,
           duty: c.duty, agv: c.agv, bayType: c.bayType, mode: mode
-        });
+        };
+        // 透传 data.js 的新字段。只有 render.js 已提供增强接口时才传，
+        // 老版 render 会静默忽略这些键，届时净距控件也会自动隐藏。
+        if (typeof window.WH.renderClearance === "function" && c.productType != null) {
+          pr.productType = c.productType;
+          pr.columnSpan = c.columnSpan;
+          var env = gapEnvelope(c);
+          if (env !== undefined) pr.columnEnvelope = env;
+        }
+        s = window.WH.renderScene(pr);
       }
     } catch (e) { s = null; }
     if (!s || typeof s !== "string" || !s.length) return fallbackSVG(mode);
@@ -552,6 +632,7 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
     updateStepsText();
     updateSchemeActive();
     updateScene();
+    updateGapReadout();
     if (!noRender) renderStage();
   }
 
@@ -782,6 +863,7 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
 
   /* ---------------- 事件绑定 ---------------- */
   function bind() {
+    bindGap();
     $.playBtn.addEventListener("click", play);
     $.skipBtn.addEventListener("click", skip);
     $.fsBtn.addEventListener("click", toggleFs);
@@ -872,6 +954,9 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
     $.rerenderBtn = q("#whRerender");
     $.sceneEl = q("#whScene");
     $.briefEl = q("#whBrief");
+    $.gapEl = q("#whGapbar");
+    $.gapSeg = q("#whGapSeg");
+    $.gapV = q("#whGapV");
 
     buildSteps();
     buildParams();
