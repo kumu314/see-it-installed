@@ -119,7 +119,28 @@
       if (!v || typeof v.toggleFlip !== "function") return;
       v.toggleFlip();
     });
-    tools.appendChild(flipBtn);    var zoomOutBtn = mkBtn("−", "缩小（照片与模型同倍率）");
+    tools.appendChild(flipBtn);
+
+    /* C：主光方向循环切换。照片的左右由标定相机决定，这里只是给用户一个手动覆盖入口。 */
+    var LIGHT_ORDER = ["front", "left", "right", "back"];
+    var LIGHT_NAMES = { front: "顺光", left: "左光", right: "右光", back: "逆光" };
+    var lightBtn = mkBtn("光照：顺光", "切换主光方向：顺光 / 左光 / 右光 / 逆光（照片实景模式下才生效）");
+    lightBtn.id = "wh3dLight";
+    lightBtn.style.display = "none";
+    lightBtn.addEventListener("click", function () {
+      var v = window.WH.view3d;
+      if (!v || typeof v.setLightFrom !== "function") return;
+      /* _st 挂在 holder.__view3d 上，WH.view3d 上没有 —— 拿错了会永远从 front 开始 */
+      var holder = document.getElementById("whView3dHolder");
+      var inst = holder && holder.__view3d;
+      var st = (inst && inst._st) || {};
+      var cur = LIGHT_ORDER.indexOf(st._lightDir) >= 0 ? st._lightDir : "front";
+      var next = LIGHT_ORDER[(LIGHT_ORDER.indexOf(cur) + 1) % LIGHT_ORDER.length];
+      if (v.setLightFrom(next)) lightBtn.textContent = "光照：" + LIGHT_NAMES[next];
+    });
+    tools.appendChild(lightBtn);
+
+    var zoomOutBtn = mkBtn("−", "缩小（照片与模型同倍率）");
     zoomOutBtn.id = "wh3dZoomOut";
     zoomOutBtn.style.display = "none";
     zoomOutBtn.addEventListener("click", function () {
@@ -152,7 +173,7 @@
       if (fit) fit.textContent = Math.round(z * 100) + "%";
     });
     document.addEventListener("wh71:photo-calibrated", function () {
-      ["wh3dFlip", "wh3dZoomOut", "wh3dZoomFit", "wh3dZoomIn"].forEach(function (id) { var elx = document.getElementById(id); if (elx) elx.style.display = ""; });
+      ["wh3dFlip", "wh3dLight", "wh3dZoomOut", "wh3dZoomFit", "wh3dZoomIn"].forEach(function (id) { var elx = document.getElementById(id); if (elx) elx.style.display = ""; });
     });
 
     var orbitBtn = mkBtn('旋转演示', '自动环绕，可随时停止');
