@@ -1,0 +1,21 @@
+# 统一 LF：本机 core.autocrlf=true，缺这条时一次一行的改动会被
+# CRLF/LF 抖动放大成整文件 diff，review 看不出真实改动（见 88298e6）。
+* text=auto eol=lf
+
+# 二进制显式声明，禁止任何换行与编码转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.db binary
+*.glb binary
+*.gltf binary
+
+# 压缩后的 vendor 脚本按文本处理并锁 LF，便于逐字节对账
+scene71-3d/vendor/three.min.js text eol=lf

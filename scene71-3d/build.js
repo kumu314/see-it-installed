@@ -13,6 +13,10 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = __dirname;
+/* --strict：CI 专用。默认宽松，便于 A/B 并行开发早期模块还没交齐。
+   开启后 calib.js / model.js 任一缺失就直接非零退出，杜绝
+   「模块没接上、页面却画 stub 方块、CI 还全绿」的静默降级。 */
+const STRICT = process.argv.indexOf("--strict") !== -1;
 /* 2D 基座（data/render/ui）位置：仓库内布局优先（scene71-3d/../src），退回工作区外部布局（../weihua-71/src） */
 const APP2D_CANDIDATES = [path.join(ROOT, "..", "src"), path.join(ROOT, "..", "weihua-71", "src")];
 const APP2D = APP2D_CANDIDATES.find(p => fs.existsSync(path.join(p, "data.js"))) || APP2D_CANDIDATES[0];
@@ -31,8 +35,16 @@ function read(p, optional) {
 /* ---- 收集模块 ---- */
 const threeSrc = read(threePath);
 // The integrated repository keeps A/B under ../src; standalone copies may keep them locally.
+const OPT_CACHE = Object.create(null);
+const OPT_SRC = Object.create(null);
 function optional3d(name) {
-  return read(path.join(ROOT, "src", name), true) || read(path.join(APP2D, name), true);
+  if (name in OPT_CACHE) return OPT_CACHE[name];
+  var local = path.join(ROOT, "src", name);
+  var fallback = path.join(APP2D, name);
+  var picked = fs.existsSync(local) ? local : (fs.existsSync(fallback) ? fallback : null);
+  OPT_SRC[name] = picked;
+  OPT_CACHE[name] = picked ? read(picked, true) : null;
+  return OPT_CACHE[name];
 }
 const c3d = [
   optional3d("calib.js"),                            // A 可选
@@ -48,6 +60,17 @@ const app2d = [
 ];
 const css = read(path.join(APP2D, "app.css"), true) || "";
 
+if (STRICT) {
+  var missing3d = ["calib.js", "model.js"].filter(function (n) { return !OPT_CACHE[n]; });
+  if (missing3d.length) {
+    console.error("STRICT FAILED: 3D 模块缺失 → " + missing3d.join(", "));
+    console.error("  期望目录: " + path.join(ROOT, "src"));
+    console.error("  回落目录: " + APP2D);
+    console.error("  宽松模式会静默降级成 stub 方块；CI 不允许。");
+    process.exit(1);
+  }
+}
+
 const tpl = read(tplPath);
 const block = arr => arr.map(s => "/* ==== module ==== */\n" + s).join("\n");
 
@@ -60,8 +83,9 @@ let out = tpl
 const urls = (out.match(/https?:\/\/[^"\s)'"]+/g) || [])
   .filter(u => !/w3\.org|threejs\.org|github\.com\/mrdoob|mrdoob\.com|discourse\.threejs|donmccurdy/.test(u));
 const badSrc = /<script[^>]+src=|<link[^>]+href=|@import\s+url\(/.test(out);
-const missing = ["WH.DATA", "WH.view3d", "renderScene", "initUI", "whModeView3d"]
-  .filter(k => out.indexOf(k) === -1);
+var required = ["WH.DATA", "WH.view3d", "renderScene", "initUI", "whModeView3d"];
+if (STRICT) required = required.concat(["WH.model", "WH.calib"]);
+const missing = required.filter(k => out.indexOf(k) === -1);
 const size = Buffer.byteLength(out);
 
 if (urls.length || badSrc || missing.length) {
@@ -82,7 +106,12 @@ const outPath = path.join(distDir, "作品71-3d.html");
 fs.writeFileSync(outPath, out);
 
 console.log("BUILD OK (3D)");
+console.log("  mode   :", STRICT ? "strict（CI）" : "宽松（并行开发）");
 console.log("  output :", outPath);
 console.log("  size   :", size, "bytes (" + (size / 1024).toFixed(0) + " KB)");
 console.log("  calib  :", optional3d("calib.js") ? "已接线(A)" : "缺省→示意地面(L2)");
 console.log("  model  :", optional3d("model.js") ? "已接线(B)" : "缺省→stub 方块");
+if (STRICT) {
+  console.log("  calib从:", OPT_SRC["calib.js"]);
+  console.log("  model从:", OPT_SRC["model.js"]);
+}
