@@ -28,7 +28,7 @@
   var playing = false;
   var rendering = false;   // 「客户改需求」进行中
   var sbs = false;         // 并排对比（图内左右分栏）
-  var viewMode = 'diagram';// diagram | sbs | model —— 全局唯一视图状态（F05）
+  var viewMode = 'diagram';// diagram | model | compare | beforeafter —— 全局唯一视图状态（F05）
   var cfgRev = 0;          // 参数版本号：每次成功提交递增，2D/3D/导出同源
   var photoState = 'none'; // none | ready —— 现场照片是否已标定接入
   var photoName = '';
@@ -483,7 +483,8 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
           '<div class="wh-modebar" id="whModebar" role="group" aria-label="视图切换">' +
             '<button class="wh-seg active" id="whModeSingle" type="button" data-mode="diagram" aria-pressed="true">示意图</button>' +
             '<button class="wh-seg" id="whModeModel" type="button" data-mode="model" aria-pressed="false">3D 预览</button>' +
-            '<button class="wh-seg" id="whModeSbs" type="button" data-mode="sbs" aria-pressed="false">前后对比</button>' +
+            '<button class="wh-seg" id="whModeCompare" type="button" data-mode="compare" aria-pressed="false">方案对比</button>' +
+            '<button class="wh-seg" id="whModeBa" type="button" data-mode="beforeafter" aria-pressed="false">前后对比</button>' +
           '</div>' +
           '<div class="wh-params" id="whParams"></div>' +
           '<div class="wh-gapbar" id="whGapbar" hidden>' +
@@ -866,18 +867,23 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
   }
 
   function updateModeButtons() {
-    var map = { diagram: $.modeSingle, sbs: $.modeSbs, model: $.modeModel };
+    var map = { diagram: $.modeSingle, model: $.modeModel, compare: $.modeCompare, beforeafter: $.modeBa };
     for (var k in map) {
       if (!map[k]) continue;
       var on = (viewMode === k);
-      map[k].classList.toggle('active', on);
-      map[k].setAttribute('aria-pressed', on ? 'true' : 'false');
+      map[k].classList.toggle("active", on);
+      map[k].setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    if ($.modeBa) {
+      var ready = photoState === "ready";
+      $.modeBa.disabled = !ready;
+      $.modeBa.title = ready ? "原图与安装预览对比" : "先添加现场照片才能做前后对比";
     }
   }
 
   function updateStatus() {
     if (!$.statusEl) return;
-    var modeName = viewMode === 'model' ? '3D 预览' : (viewMode === 'sbs' ? '前后对比（示意）' : '示意图');
+    var modeName = viewMode === 'model' ? '3D 预览' : (viewMode === 'compare' ? '方案对比' : (viewMode === 'beforeafter' ? '前后对比' : '示意图'));
     var sim = !!(DATA.meta && DATA.meta.valueSource === 'sim');
     var photoTxt = photoState === 'ready' ? '照片已标定' : '照片未添加';
     $.statusEl.innerHTML =
@@ -1184,24 +1190,33 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
 
   // 视图切换：示意图 / 3D 预览 / 前后对比。全局唯一样式来源（F05）。
   // 视图切换：示意图 / 3D 预览 / 前后对比。全局唯一 viewMode（F05）。
+  // 视图切换：示意图 / 3D 预览 / 方案对比 / 前后对比。全局唯一 viewMode（F05）
   function setViewMode(mode) {
-    var next = (mode === 'model' || mode === 'sbs') ? mode : 'diagram';
+    var next = (mode === "model" || mode === "compare" || mode === "beforeafter") ? mode : "diagram";
     if (next === viewMode && inited) return viewMode;
+    // 前后对比必须有已标定照片，否则不假提能力
+    if (next === "beforeafter" && photoState !== "ready") {
+      showBadge("先添加现场照片才能做前后对比");
+      setTimeout(hideBadge, 2600);
+      updateModeButtons();
+      return viewMode;
+    }
     viewMode = next;
-    sbs = (next === 'sbs');
+    sbs = (next === "compare");
     clearAll();
     playing = false;
     if (rendering) busy(false);
-    $.compareEl.classList.remove('wh-play');
-    $.compareEl.classList.remove('wh-render');
+    $.compareEl.classList.remove("wh-play");
+    $.compareEl.classList.remove("wh-render");
     hideBadge();
-    $.compareEl.classList.toggle('wh-sbs', sbs);
+    $.compareEl.classList.toggle("wh-sbs", sbs);
     updateModeButtons();
     updateStatus();
-    if (next === 'model') {
-      dispatch('wh71:viewmode', { mode: 'model' });   // glue 接管：挂载/复用 3D 视图
+    updateScene();
+    if (next === "model" || next === "beforeafter") {
+      dispatch("wh71:viewmode", { mode: next });
     } else {
-      dispatch('wh71:viewmode', { mode: next });
+      dispatch("wh71:viewmode", { mode: next });
       renderStage();
       stepsAllOff();
       paramsRevealAll();
@@ -1282,6 +1297,7 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
     if (viewMode === 'model') setViewMode('diagram');
     renderPhotoPanel();
     updateStatus();
+    updateModeButtons();
   }
 
   /* ---------- 全局暂停（F12：一个按钮停全部动效） ---------- */
@@ -1352,7 +1368,8 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
 
   function exportModeName() {
     if (viewMode === 'model') return photoState === 'ready' ? '照片安装预览' : '3D示意预览';
-    if (viewMode === 'sbs') return '前后对比示意';
+    if (viewMode === 'compare') return '方案对比示意';
+    if (viewMode === 'beforeafter') return '前后对比';
     return '示意预览';
   }
 
@@ -1415,7 +1432,7 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
       saveBtn.disabled = false;
     }
 
-    if (viewMode === 'model') {
+    if (viewMode === 'model' || viewMode === 'beforeafter') {
       var raw = (typeof window.WH.export3d === 'function') ? window.WH.export3d() : null;
       if (!raw) { fail('3D 画面尚未就绪，请稍后重试'); }
       else {
@@ -1473,10 +1490,12 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
     if ($.moreBtn) $.moreBtn.addEventListener("click", function () { toggleBrief(); });
 
     $.modeSingle = q('#whModeSingle');
-    $.modeSbs = q('#whModeSbs');
+    $.modeCompare = q('#whModeCompare');
+    $.modeBa = q('#whModeBa');
     $.modeModel = q('#whModeModel');
     if ($.modeSingle) $.modeSingle.addEventListener('click', function () { setViewMode('diagram'); });
-    if ($.modeSbs) $.modeSbs.addEventListener('click', function () { setViewMode('sbs'); });
+    if ($.modeCompare) $.modeCompare.addEventListener('click', function () { setViewMode('compare'); });
+    if ($.modeBa) $.modeBa.addEventListener('click', function () { setViewMode('beforeafter'); });
     if ($.modeModel) $.modeModel.addEventListener('click', function () { setViewMode('model'); });
 
     // 照片标定成功：状态条与照片卡同步（标定不重建模型，只改叠加相机）
@@ -1486,6 +1505,7 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
       photoName = String((d.name || (d.photo && d.photo.__whName) || '')).slice(0, 28);
       photoSize = (d.width && d.height) ? (d.width + '×' + d.height + ' px') : '';
       updateStatus();
+      updateModeButtons();
       if (typeof renderPhotoPanel === 'function') renderPhotoPanel();
     });
     // 3D 侧回报实际状态：保证同一时刻只有一个模式选中
@@ -1496,7 +1516,7 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
         viewMode = 'model'; sbs = false;
         $.compareEl.classList.remove('wh-sbs');
         updateModeButtons(); updateStatus();
-      } else if (m === 'diagram' || m === 'sbs') {
+      } else if (m === 'diagram' || m === 'compare') {
         viewMode = m; sbs = (m === 'sbs');
         $.compareEl.classList.toggle('wh-sbs', sbs);
         updateModeButtons(); updateStatus();
