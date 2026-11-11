@@ -97,8 +97,14 @@ if (urls.length || badSrc || missing.length) {
   if (missing.length) console.error("  未内联的模块:", missing);
   process.exit(1);
 }
-if (size > 900 * 1024) {
-  console.error("SELF-CHECK FAILED: 体积超 900KB →", size, "bytes");
+/* 体积上限：900KB → 1MB（2026-11-11）。
+   抬阈值的原因：#18 接入 src/brief.js（技术方案文本 → 结构化参数，20.7KB 源码）
+   后产物从 901,101 → 921,866 bytes，硬顶在 900KB 上只差 267 字节。
+   1MB 仍是「单文件、零外部依赖、双击即跑」的安全区间（浏览器解析 1MB 内联 JS 无压力），
+   阈值的作用是拦住「把整个依赖库打进产物」这类失控，不是拦住功能增长。
+   真要再涨，先查能不能砍依赖，别直接抬线。 */
+if (size > 1024 * 1024) {
+  console.error("SELF-CHECK FAILED: 体积超 1MB →", size, "bytes");
   process.exit(1);
 }
 
