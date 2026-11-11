@@ -152,8 +152,7 @@
       if (fit) fit.textContent = Math.round(z * 100) + "%";
     });
     document.addEventListener("wh71:photo-calibrated", function () {
-      ["wh3dFlip", "wh3dZoomOut", "wh3dZoomFit", "wh3dZoomIn"].forEach(function (id) { var elx = document.getElementById(id); if (elx) elx.style.display = ""; }); var fb = null;
-      if (fb) fb.style.display = "";
+      ["wh3dFlip", "wh3dZoomOut", "wh3dZoomFit", "wh3dZoomIn"].forEach(function (id) { var elx = document.getElementById(id); if (elx) elx.style.display = ""; });
     });
 
     var orbitBtn = mkBtn('旋转演示', '自动环绕，可随时停止');

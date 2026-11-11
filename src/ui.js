@@ -1490,7 +1490,6 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
     if ($.moreBtn) $.moreBtn.addEventListener("click", function () { toggleBrief(); });
 
     $.modeSingle = q('#whModeSingle');
-    $.modeSbs = null;
     $.modeCompare = q('#whModeCompare');
     $.modeBa = q('#whModeBa');
     $.modeModel = q('#whModeModel');
