@@ -149,6 +149,7 @@
   }
   var PARAMS = [
     { k: "model",      label: "型号",     g: 0, f: function (c) { return c.model; } },
+    { k: "type",       label: "设备类别", g: 0, f: function (c) { return TYPE_NAMES[c.productType] || c.productType || "—"; } },
     { k: "span",       label: "跨度",     g: 1, f: function (c) { return pval("span", c); } },
     { k: "capacity",   label: "起重量",   g: 1, f: function (c) { return pval("capacity", c); } },
     { k: "railHeight", label: "轨高",     g: 1, f: function (c) { return pval("railHeight", c); } },
@@ -315,6 +316,7 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
 .wh-chip.on{background:rgba(55,214,198,.09);border-color:rgba(55,214,198,.35)}
 .wh-form{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .wh-field{display:flex;flex-direction:column;gap:3px;min-width:0}
+.wh-field.wide{grid-column:1 / -1}
 .wh-fl{font-size:10.5px;color:#8fa0b2}
 .wh-fc{display:flex;align-items:center;gap:4px;background:#0d141c;border:1px solid #2c3745;border-radius:7px;padding:0 7px;min-height:36px}
 .wh-fc:focus-within{border-color:#6ec8fa;box-shadow:0 0 0 3px rgba(110,200,250,.18)}
@@ -526,7 +528,11 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
 
   /* ---------- 参数面板（W3）：已应用摘要 + 草稿表单 + 应用/放弃 ---------- */
   // 只列可安全手输的字段；型号/场景由方案库决定，AGV 与示意用时为记录值。
+  // 设备类别：model.js 里 bridge/gantry/casting/portal 是四套真实几何，选中即换机型重建
+  var TYPE_NAMES = { bridge: '桥式', gantry: '门式', casting: '铸造', portal: '门座' };
+  var TYPE_ORDER = ['gantry', 'bridge', 'casting', 'portal'];
   var EDIT_FIELDS = [
+    { k: 'productType', label: '设备类别', unit: '', step: '', min: 0, max: 0, type: 'select', options: TYPE_ORDER, labels: TYPE_NAMES, wide: true, g: 0 },
     { k: 'span',       label: '跨度',   unit: 'm', step: '0.1', min: 0.1, max: 149.9, type: 'number', g: 1 },
     { k: 'capacity',   label: '起重量', unit: 't', step: '1',   min: 1,   max: 4999, type: 'number', g: 1 },
     { k: 'railHeight', label: '轨高',   unit: 'm', step: '0.1', min: 0.1, max: 79.9, type: 'number', g: 1 },
@@ -545,12 +551,14 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
     if (v == null || v === '') return '—';
     if (k === 'span' || k === 'railHeight') return fixed1(Number(v)) + ' m';
     if (k === 'capacity') return Math.round(Number(v)) + ' t';
+    if (k === 'productType') return TYPE_NAMES[v] || String(v);
     return String(v);
   }
 
   function buildParams() {
     var chips = [
       { k: 'model', label: '型号', g: 0 },
+      { k: 'type', label: '设备类别', g: 0 },
       { k: 'span', label: '跨度', g: 1 },
       { k: 'capacity', label: '起重量', g: 1 },
       { k: 'railHeight', label: '轨高', g: 1 },
@@ -564,11 +572,12 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
 
     var fields = EDIT_FIELDS.map(function (f) {
       var id = 'whF_' + f.k;
+      var optLabel = f.labels || null;
       var ctrl = f.type === 'select'
         ? '<select class="wh-fi" id="' + id + '" data-f="' + f.k + '" aria-label="' + esc(f.label) + '">' +
-            f.options.map(function (o) { return '<option value="' + esc(o) + '">' + esc(o) + '</option>'; }).join('') + '</select>'
+            f.options.map(function (o) { return '<option value="' + esc(o) + '">' + esc(optLabel ? (optLabel[o] || o) : o) + '</option>'; }).join('') + '</select>'
         : '<input class="wh-fi" id="' + id + '" data-f="' + f.k + '" type="number" inputmode="decimal" step="' + f.step + '" min="' + f.min + '" max="' + f.max + '" aria-label="' + esc(f.label + '（' + f.unit + '）') + '">';
-      return '<label class="wh-field" for="' + id + '" data-g="' + f.g + '">' +
+      return '<label class="wh-field' + (f.wide ? ' wide' : '') + '" for="' + id + '" data-g="' + f.g + '">' +
         '<span class="wh-fl">' + esc(f.label) + '</span>' +
         '<span class="wh-fc">' + ctrl + (f.unit ? '<span class="wh-fu">' + esc(f.unit) + '</span>' : '') + '</span>' +
         '</label>';
@@ -671,7 +680,8 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
     for (var i = 0; i < DATA.configs.length; i++) {
       var c = DATA.configs[i];
       if (Math.abs(c.span - cand.span) < 1e-6 && Math.abs(c.capacity - cand.capacity) < 1e-6 &&
-          Math.abs(c.railHeight - cand.railHeight) < 1e-6 && c.duty === cand.duty) return c.id;
+          Math.abs(c.railHeight - cand.railHeight) < 1e-6 && c.duty === cand.duty &&
+          (c.productType || 'gantry') === (cand.productType || 'gantry')) return c.id;
     }
     return null;
   }
@@ -682,13 +692,14 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
     cand.capacity = draft.capacity;
     cand.railHeight = draft.railHeight;
     cand.duty = draft.duty;
+    if (draft.productType) cand.productType = draft.productType;
     var presetId = findPresetId(cand);
     if (presetId) {
       var preset = cfgById(presetId);
       if (preset) return cloneObj(preset);
     }
     cand.id = '自定义';
-    cand.model = '基于 ' + cfg.id + ' 的自定义';
+    cand.model = (TYPE_NAMES[cand.productType] || '自定义') + ' · 自定义参数（基于 ' + cfg.id + '）';
     cand.scene = cfg.scene + ' · 自定义参数';
     cand.source = 'sim';
     return cand;

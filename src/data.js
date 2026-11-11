@@ -246,6 +246,7 @@
     if (!isNum(c.railHeight) || !(c.railHeight > 0) || !(c.railHeight < 80)) bad("railHeight", "轨高需为 0–80 米之间的数字");
     if (!isNum(c.agv) || c.agv < 0 || c.agv > 20) bad("agv", "AGV 数量需为 0–20 的整数");
     if (["A5", "A6", "A7", "A8"].indexOf(c.duty) === -1) bad("duty", "工作级别需在 A5–A8 之间");
+    if (["bridge", "gantry", "casting", "portal"].indexOf(c.productType) === -1) bad("productType", "设备类别需在 桥式/门式/铸造/门座 之间");
     if (!c.model || !String(c.model).trim()) bad("model", "方案名称不能为空");
     return out;
   }
