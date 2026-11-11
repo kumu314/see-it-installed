@@ -6,7 +6,7 @@ dist/
 *.tmp
 *.log
 
-# 依赖（本项目不需要，防止误提交）
+# 依赖（本项目不需要，防止误提）
 node_modules/
 
 # 系统与编辑器
@@ -14,3 +14,10 @@ node_modules/
 Thumbs.db
 .vscode/
 .idea/
+
+# 本地施工/走查辅助（截图、临时工具、浏览器回归产物）
+_shots/
+_tools/
+_tests/
+_review/
+tests/ui-verify/_artifacts/
