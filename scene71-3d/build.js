@@ -6,7 +6,7 @@
  * 模块顺序（不可换）：
  *   three.min.js（内联） → [calib.js 可选] → [model.js 可选]
  *   → view3d.js → glue.js → data.js → render.js → ui.js
- * 说明：data/render/ui 来自 ../weihua-71/src（2D 基座，本任务不改）；
+ * 说明：data/render/ui 来自仓库根的 ../src（2D 基座，本任务不改）；
  *       A/B 未交付时对应文件缺失不报错，自动降级（铁律 2）。
  * ========================================================== */
 const fs = require("fs");
@@ -17,8 +17,12 @@ const ROOT = __dirname;
    开启后 calib.js / model.js 任一缺失就直接非零退出，杜绝
    「模块没接上、页面却画 stub 方块、CI 还全绿」的静默降级。 */
 const STRICT = process.argv.indexOf("--strict") !== -1;
-/* 2D 基座（data/render/ui）位置：仓库内布局优先（scene71-3d/../src），退回工作区外部布局（../weihua-71/src） */
-const APP2D_CANDIDATES = [path.join(ROOT, "..", "src"), path.join(ROOT, "..", "weihua-71", "src")];
+/* 2D 基座（data/render/ui）位置：仓库内布局优先（scene71-3d/../src）；
+   退回工作区外部布局时，新目录名 see-it-installed 与旧名 weihua-71 都试一遍
+   （2026-11-11 仓库由 weihua-71 改名为 see-it-installed，旧 clone 仍能构建） */
+const APP2D_CANDIDATES = [path.join(ROOT, "..", "src"),
+  path.join(ROOT, "..", "see-it-installed", "src"),
+  path.join(ROOT, "..", "weihua-71", "src")];
 const APP2D = APP2D_CANDIDATES.find(p => fs.existsSync(path.join(p, "data.js"))) || APP2D_CANDIDATES[0];
 const tplPath = path.join(ROOT, "template3d.html");
 const threePath = path.join(ROOT, "vendor", "three.min.js");
