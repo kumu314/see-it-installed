@@ -34,6 +34,8 @@
   var st = null;      // 运行状态
   var photo = null, calib = null, params = null;
   var ro = null;      // ResizeObserver
+  var envRT = null;                    // 程序化环境贴图（PMREM 生成，零外部资源）
+  var sunLight = null, rimLight = null; // 提到模块级：照片模式要能关阴影
 
   function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
@@ -217,6 +219,84 @@
       else applyModelTransform();
     }
     applyCamera();
+    applyEnvToModel();
+  }
+
+  /* ---------- 环境贴图与光照模式（A1-A4） ----------
+   * 金属质感八成靠环境反射。没有 envMap 的 MeshStandardMaterial 只能靠高光，
+   * 看起来就是「哑光塑料」。这里用一个自建小场景（深色房间 + 天窗 + 两侧冷暖光条）
+   * 经 PMREMGenerator 烘成环境贴图 —— 零外部资源、零 HDR 文件、零体积。 */
+  function buildEnvMap() {
+    if (envRT || !renderer) return envRT ? envRT.texture : null;
+    try {
+      var envScene = new THREE.Scene();
+      var room = new THREE.Mesh(
+        new THREE.BoxGeometry(120, 120, 120),
+        new THREE.MeshBasicMaterial({ color: 0x161e26, side: THREE.BackSide }));
+      envScene.add(room);
+      function panel(w, h, color, x, y, z, ry, rx) {
+        var p = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+          new THREE.MeshBasicMaterial({ color: color }));
+        p.position.set(x, y, z);
+        if (ry) p.rotation.y = ry;
+        if (rx) p.rotation.x = rx;
+        envScene.add(p);
+      }
+      panel(70, 70, 0xf2f7fb, 0, 58, 0, 0, Math.PI / 2);    // 天窗（顶部亮面）
+      panel(34, 24, 0xffe6bf, -58, 12, 0, Math.PI / 2, 0);  // 暖侧光
+      panel(34, 20, 0xbcd8f2, 58, 6, 0, -Math.PI / 2, 0);   // 冷侧光
+      panel(50, 14, 0x8fa6b8, 0, -20, -58, 0, 0);           // 远处弱反光
+      var pmrem = new THREE.PMREMGenerator(renderer);
+      envRT = pmrem.fromScene(envScene, 0.04);
+      pmrem.dispose();
+      envScene.traverse(function (o) {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) o.material.dispose();
+      });
+    } catch (e) {
+      envRT = null;   // 生成失败不阻塞渲染，退回无反射
+    }
+    return envRT ? envRT.texture : null;
+  }
+
+  /* 把环境贴图赋给当前模型的所有标准材质。
+   * model.js 的材质是全局缓存共享的，所以这里改的是共享对象；
+   * 切模式时调 envMapIntensity，而不是换材质。 */
+  function applyEnvToModel() {
+    var g = st && st.modelGroup;
+    var tex = envRT ? envRT.texture : null;
+    if (!g || !tex) return;
+    var intensity = st.photoMode ? 0.25 : 1.0;  // 照片自带光照方向，压到 1/4 免抢戏
+    g.traverse(function (o) {
+      if (!o.isMesh || !o.material) return;
+      var list = Array.isArray(o.material) ? o.material : [o.material];
+      for (var i = 0; i < list.length; i++) {
+        var mm = list[i];
+        if (!mm || !mm.isMeshStandardMaterial) continue;
+        if (mm.envMap !== tex) { mm.envMap = tex; mm.needsUpdate = true; }
+        mm.envMapIntensity = intensity;
+      }
+    });
+  }
+
+  /* 示意模式与照片模式的光照差异集中在这里：
+   * 照片的地面是像素不是几何，没有东西接收阴影，所以照片模式关阴影；
+   * 照片自带光照，假反射会抢戏，所以压 envMapIntensity。 */
+  function applyLightingMode() {
+    var isPhoto = !!(st && st.photoMode);
+    if (sunLight) sunLight.castShadow = !isPhoto;
+    if (rimLight) rimLight.intensity = isPhoto ? 0.22 : 0.55;
+    if (renderer) renderer.toneMappingExposure = isPhoto ? 0.98 : 1.05;
+    applyEnvToModel();
+    /* 只读调试口：让验收脚本能读到光照真实状态，不必靠截图猜 */
+    if (st) st._lighting = {
+      tone: renderer ? renderer.toneMapping : null,
+      shadowMap: renderer ? renderer.shadowMap.enabled : null,
+      sunCast: sunLight ? sunLight.castShadow : null,
+      rim: rimLight ? rimLight.intensity : null,
+      exposure: renderer ? renderer.toneMappingExposure : null,
+      photoMode: isPhoto
+    };
   }
 
   /* ---------- 背景与地面（C2/C3） ----------
@@ -254,6 +334,7 @@
       });
       scene.add(st.fallback);
     }
+    applyLightingMode();
   }
 
   /* ---------- L1 实景切换：照片背景 + 标定相机（不重建壳，保留交互状态） ---------- */
@@ -276,6 +357,7 @@
     computeBase();
     applyFit();          // 尺度 + 朝向对齐标定矩形（相机不动）
     resize();
+    applyLightingMode(); // 照片模式：关阴影、压 envMapIntensity
   }
 
   /* ---------- C 层动画装饰（不碰 A/B 模型） ----------
@@ -390,14 +472,34 @@
     camera = new THREE.PerspectiveCamera(CAM.fov, 1, 0.1, 4000);
     renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;   // A3：高光不再糊成一片死白
+    renderer.toneMappingExposure = 1.05;
+    renderer.shadowMap.enabled = true;                     // A2：模型侧早已 castShadow，缺的是这里
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.style.cssText = "width:100%;height:100%;display:block;touch-action:none;cursor:grab";
     el.appendChild(renderer.domElement);
     canvas = renderer.domElement;
 
-    /* 光照 */
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    var sun = new THREE.DirectionalLight(0xfff0d0, 1.15); sun.position.set(60, 90, 50); scene.add(sun);
-    var fill = new THREE.DirectionalLight(0x5aa9c9, 0.45); fill.position.set(-70, 40, -60); scene.add(fill);
+    /* 光照（A2/A4）：主光开阴影，补一盏冷边缘光把钢结构从深色背景里勾出来 */
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    sunLight = new THREE.DirectionalLight(0xfff0d0, 1.25);
+    sunLight.position.set(60, 90, 50);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(1024, 1024);
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 420;
+    sunLight.shadow.camera.left = -140;
+    sunLight.shadow.camera.right = 140;
+    sunLight.shadow.camera.top = 140;
+    sunLight.shadow.camera.bottom = -140;
+    sunLight.shadow.bias = -0.0006;
+    sunLight.shadow.normalBias = 0.6;
+    scene.add(sunLight);
+    var fill = new THREE.DirectionalLight(0x5aa9c9, 0.4);
+    fill.position.set(-70, 40, -60); scene.add(fill);
+    rimLight = new THREE.DirectionalLight(0x9fd4ff, 0.55);
+    rimLight.position.set(-40, 34, -85); scene.add(rimLight);
+    buildEnvMap();                                           // A1：零资源环境反射
 
     st = {
       el: el,
@@ -522,10 +624,12 @@
         st.disposed = true;
         if (st.raf) cancelAnimationFrame(st.raf);
         if (ro) { ro.disconnect(); ro = null; } else window.removeEventListener("resize", resize);
+        try { if (envRT) { envRT.dispose(); envRT = null; } } catch (e) {}
         try { renderer.dispose(); } catch (e) {}
         if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
         el.__view3d = null;
         inst = null; scene = null; camera = null; renderer = null; canvas = null; st = null;
+        sunLight = null; rimLight = null;
       }
     };
     el.__view3d = inst;
