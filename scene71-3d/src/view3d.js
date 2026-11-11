@@ -36,6 +36,9 @@
   var ro = null;      // ResizeObserver
   var envRT = null;                    // 程序化环境贴图（PMREM 生成，零外部资源）
   var sunLight = null, rimLight = null; // 提到模块级：照片模式要能关阴影
+  var ambientLight = null;              // B：照片模式下按照片亮度调环境光
+  var photoTex = null;                  // 照片模式当前使用的背景纹理（可能是合成后的）
+  var shadowKey = "";                   // 上次画接触阴影时的足迹指纹，避免重复重建
 
   function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
@@ -220,6 +223,134 @@
     }
     applyCamera();
     applyEnvToModel();
+    if (st.photoMode) rebuildPhotoComposite();   // 换模型后足迹变了，接触暗部要重画
+  }
+
+  /* ---------- 照片融入：接触遮蔽（A）+ 色调匹配（B） ----------
+   * 违和感的来源按影响排序：没有接触暗部（设备浮着）> 光照方向不一致 > 色调不匹配。
+   * 这一组只解决第一和第三：calib 里没有光源方向，所以画的是「接触遮蔽」而不是
+   * 方向性投影——形状与位置贴合照片透视（用 calib.project 投的），但没有影子朝向。 */
+
+  /* B：采样照片的平均色。用户选的图是 blob/dataURL，同源，不会污染 canvas。 */
+  function photoTone() {
+    if (!photo) return null;
+    try {
+      var cv = document.createElement("canvas");
+      cv.width = 32; cv.height = 32;
+      var cx = cv.getContext("2d");
+      cx.drawImage(photo, 0, 0, 32, 32);
+      var d = cx.getImageData(0, 0, 32, 32).data;
+      var r = 0, g = 0, b = 0, n = 0;
+      for (var i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+      if (!n) return null;
+      r /= n; g /= n; b /= n;
+      return { r: r, g: g, b: b, lum: 0.299 * r + 0.587 * g + 0.114 * b };
+    } catch (e) {
+      return null;   // 跨域污染或读不到像素时静默放弃，不影响渲染
+    }
+  }
+
+  /* B：把照片的亮度与色偏映射到灯光上。
+   * 只调环境光强度与主光颜色，不动 exposure —— 实测 ACES 会连背景一起压暗，
+   * 改 exposure 会同时改照片亮度，不是我们要的。 */
+  function applyPhotoTone(tone) {
+    if (!tone) return;
+    var lumN = clamp(tone.lum / 255, 0, 1);
+    if (ambientLight) ambientLight.intensity = 0.3 + lumN * 0.5;
+    if (sunLight) {
+      var bias = clamp((tone.r - tone.b) / 55, -1, 1);   // 正=偏暖，负=偏冷
+      var mid = new THREE.Color(0xfff0d0), warm = new THREE.Color(0xffe0b0), cool = new THREE.Color(0xd4e4ff);
+      var target = bias >= 0 ? mid.clone().lerp(warm, bias * 0.5) : mid.clone().lerp(cool, -bias * 0.5);
+      sunLight.color.copy(target);
+    }
+  }
+
+  /* A：把模型的地面足迹投到照片像素，画两层软边暗部。 */
+  function drawContactShadow(cx, w, h) {
+    if (!calib || !calib.ok || !st || !st.modelGroup) return false;
+    /* project 挂在 WH.calib 上（模块 API），不在标定结果对象上 */
+    var C = window.WH && window.WH.calib;
+    if (!C || typeof C.project !== "function") return false;
+    var box = new THREE.Box3().setFromObject(st.modelGroup);
+    if (box.isEmpty() || !isFinite(box.min.x) || !isFinite(box.max.z)) return false;
+    var spanX = box.max.x - box.min.x, spanZ = box.max.z - box.min.z;
+    if (!(spanX > 0) || !(spanZ > 0)) return false;
+
+    /* 主遮蔽比足迹外扩一圈，接触暗部贴合足迹 —— 近似环境光遮蔽，不是方向投影 */
+    var padX = spanX * 0.14, padZ = spanZ * 0.18;
+    var quad = [
+      [box.min.x - padX, 0, box.min.z - padZ],
+      [box.max.x + padX, 0, box.min.z - padZ],
+      [box.max.x + padX, 0, box.max.z + padZ],
+      [box.min.x - padX, 0, box.max.z + padZ]
+    ].map(function (p) { return C.project(p, calib); });
+    for (var i = 0; i < quad.length; i++) if (!quad[i]) return false;
+
+    var midX = (quad[0][0] + quad[1][0] + quad[2][0] + quad[3][0]) / 4;
+    var midY = (quad[0][1] + quad[1][1] + quad[2][1] + quad[3][1]) / 4;
+    var inner = quad.map(function (p) {
+      return [midX + (p[0] - midX) * 0.9, midY + (p[1] - midY) * 0.9];
+    });
+
+    var blur = Math.max(4, Math.min(w, h) * 0.014);
+    var canBlur = "filter" in cx;
+
+    function fillPoly(pts, style, px) {
+      cx.save();
+      if (canBlur && px > 0) cx.filter = "blur(" + px.toFixed(1) + "px)";
+      cx.fillStyle = style;
+      cx.beginPath();
+      for (var k = 0; k < pts.length; k++) {
+        if (k) cx.lineTo(pts[k][0], pts[k][1]); else cx.moveTo(pts[k][0], pts[k][1]);
+      }
+      cx.closePath();
+      cx.fill();
+      cx.restore();
+    }
+    fillPoly(quad, "rgba(10,14,18,0.38)", blur);            // 主遮蔽：大、软
+    fillPoly(inner, "rgba(4,8,12,0.30)", blur * 0.45);     // 接触暗部：贴合、更深
+    return true;
+  }
+
+  /* A+B 的合成入口：把照片与接触暗部画进一张 canvas，替换背景纹理。
+   * 足迹没变就跳过，避免切方案时重复重建 1200×800 的 canvas。 */
+  function rebuildPhotoComposite() {
+    if (!st || !st.photoMode || !photo || !st.modelGroup) return;
+    var w = photo.naturalWidth || photo.width || 0;
+    var h = photo.naturalHeight || photo.height || 0;
+    if (!(w > 0) || !(h > 0)) return;
+
+    var box = new THREE.Box3().setFromObject(st.modelGroup);
+    var key = box.isEmpty() ? "empty" : [box.min.x, box.max.x, box.min.z, box.max.z,
+      st.fitScale, st.fitFlipY].map(function (v) { return Math.round(v * 1000) / 1000; }).join(",");
+    if (key === shadowKey && photoTex && scene.background === photoTex) return;
+    shadowKey = key;
+
+    var cv, cx;
+    try {
+      cv = document.createElement("canvas");
+      cv.width = w; cv.height = h;
+      cx = cv.getContext("2d");
+      cx.drawImage(photo, 0, 0, w, h);
+      var drew = drawContactShadow(cx, w, h);
+      st._blend = { key: key, drew: drew, w: w, h: h };
+    } catch (e) {
+      st._blend = { err: String(e), key: key };
+      /* 画不出接触暗部也要让照片正常显示：退回未合成的照片纹理 */
+      photoTex = null; shadowKey = "";
+      return;
+    }
+
+    var tex = new THREE.Texture(cv);
+    tex.needsUpdate = true;
+    tex.minFilter = THREE.LinearFilter;
+    if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+    var old = scene.background;
+    scene.background = tex;
+    photoTex = tex;
+    if (old && old !== tex && old.dispose) { try { old.dispose(); } catch (e) {} }
+    try { resize(); } catch (e) {}   // 换了纹理要重新套 cover 适配
+    if (st._blend) { st._blend.texSet = true; }
   }
 
   /* ---------- 环境贴图与光照模式（A1-A4） ----------
@@ -286,7 +417,9 @@
     var isPhoto = !!(st && st.photoMode);
     if (sunLight) sunLight.castShadow = !isPhoto;
     if (rimLight) rimLight.intensity = isPhoto ? 0.22 : 0.55;
-    if (renderer) renderer.toneMappingExposure = isPhoto ? 0.98 : 1.05;
+    if (renderer) renderer.toneMappingExposure = isPhoto ? 1.0 : 1.05;  // 实测 ACES 会把背景压暗约一成，照片模式不再额外压
+    if (isPhoto) applyPhotoTone(photoTone());
+    else if (ambientLight) ambientLight.intensity = 0.5;
     applyEnvToModel();
     /* 只读调试口：让验收脚本能读到光照真实状态，不必靠截图猜 */
     if (st) st._lighting = {
@@ -295,6 +428,8 @@
       sunCast: sunLight ? sunLight.castShadow : null,
       rim: rimLight ? rimLight.intensity : null,
       exposure: renderer ? renderer.toneMappingExposure : null,
+      ambient: ambientLight ? Math.round(ambientLight.intensity * 1000) / 1000 : null,
+      sunColor: sunLight ? "#" + sunLight.color.getHexString() : null,
       photoMode: isPhoto
     };
   }
@@ -335,6 +470,7 @@
       scene.add(st.fallback);
     }
     applyLightingMode();
+    if (st.photoMode) rebuildPhotoComposite();
   }
 
   /* ---------- L1 实景切换：照片背景 + 标定相机（不重建壳，保留交互状态） ---------- */
@@ -357,7 +493,8 @@
     computeBase();
     applyFit();          // 尺度 + 朝向对齐标定矩形（相机不动）
     resize();
-    applyLightingMode(); // 照片模式：关阴影、压 envMapIntensity
+    applyLightingMode(); // 照片模式：关阴影、压 envMapIntensity、按照片调色
+    rebuildPhotoComposite(); // 照片 + 接触暗部合成进背景
   }
 
   /* ---------- C 层动画装饰（不碰 A/B 模型） ----------
@@ -481,7 +618,8 @@
     canvas = renderer.domElement;
 
     /* 光照（A2/A4）：主光开阴影，补一盏冷边缘光把钢结构从深色背景里勾出来 */
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
     sunLight = new THREE.DirectionalLight(0xfff0d0, 1.25);
     sunLight.position.set(60, 90, 50);
     sunLight.castShadow = true;
@@ -625,11 +763,13 @@
         if (st.raf) cancelAnimationFrame(st.raf);
         if (ro) { ro.disconnect(); ro = null; } else window.removeEventListener("resize", resize);
         try { if (envRT) { envRT.dispose(); envRT = null; } } catch (e) {}
+        try { if (photoTex && photoTex.dispose) photoTex.dispose(); } catch (e) {}
+        photoTex = null; shadowKey = "";
         try { renderer.dispose(); } catch (e) {}
         if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
         el.__view3d = null;
         inst = null; scene = null; camera = null; renderer = null; canvas = null; st = null;
-        sunLight = null; rimLight = null;
+        sunLight = null; rimLight = null; ambientLight = null;
       }
     };
     el.__view3d = inst;
