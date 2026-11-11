@@ -39,6 +39,7 @@
   var ambientLight = null;              // B：照片模式下按照片亮度调环境光
   var photoTex = null;                  // 照片模式当前使用的背景纹理（可能是合成后的）
   var shadowKey = "";                   // 上次画接触阴影时的足迹指纹，避免重复重建
+  var lightDirName = "front";           // C：当前主光方向（front/left/right/back）
 
   function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
@@ -230,6 +231,76 @@
    * 违和感的来源按影响排序：没有接触暗部（设备浮着）> 光照方向不一致 > 色调不匹配。
    * 这一组只解决第一和第三：calib 里没有光源方向，所以画的是「接触遮蔽」而不是
    * 方向性投影——形状与位置贴合照片透视（用 calib.project 投的），但没有影子朝向。 */
+
+  /* C：把主光摆到照片里的某个方向。
+   * 照片的「左/右」不能直接用世界坐标 ±X —— 标定相机可能绕了任意角度，
+   * 所以用 calib.camera 的 position/lookAt/up 先算 forward 与 right，
+   * 再把「照片方向」映射到世界方向。示意模式下退回世界坐标的近似。 */
+  function setLightFrom(dir) {
+    if (!st || !sunLight) return false;
+    var name = ["front", "left", "right", "back"].indexOf(dir) >= 0 ? dir : "front";
+    var p = new THREE.Vector3();
+
+    if (st.photoMode && calib && calib.ok && calib.camera) {
+      var c = calib.camera;
+      var camPos = new THREE.Vector3().fromArray(c.position);
+      var camLook = new THREE.Vector3().fromArray(c.lookAt);
+      var forward = camLook.clone().sub(camPos);
+      if (forward.lengthSq() < 1e-9) return false;
+      forward.normalize();
+      var up = (c.up && c.up.length === 3)
+        ? new THREE.Vector3().fromArray(c.up) : new THREE.Vector3(0, 1, 0);
+      var right = new THREE.Vector3().crossVectors(forward, up);
+      if (right.lengthSq() < 1e-9) right.set(1, 0, 0);
+      right.normalize();
+      /* 光源位置：顺光在相机侧、逆光在物体背后、左右按照片的左右 */
+      if (name === "left") p.copy(right).multiplyScalar(-1);
+      else if (name === "right") p.copy(right);
+      else if (name === "back") p.copy(forward);
+      else p.copy(forward).multiplyScalar(-1);
+    } else {
+      if (name === "left") p.set(-1, 0, 0);
+      else if (name === "right") p.set(1, 0, 0);
+      else if (name === "back") p.set(0, 0, -1);
+      else p.set(0.3, 0, 1);
+    }
+
+    p.y += 0.7;                                  // 抬一点仰角，免得顶面全暗
+    if (p.lengthSq() < 1e-6) p.set(0, 1, 0);
+    p.normalize().multiplyScalar(220);
+    sunLight.position.copy(p);
+    lightDirName = name;
+    st._lightDir = name;
+    if (st._lighting) {
+      st._lighting.lightDir = name;
+      st._lighting.sunPos = [Math.round(p.x), Math.round(p.y), Math.round(p.z)];
+    }
+    return true;
+  }
+
+  /* C：从照片的左右亮度差猜主光在哪边。阈值取 12%，宁可猜错也别乱猜 —— 
+   * 猜错比不猜更糟，所以只在明显偏一侧时才返回 left/right，否则一律顺光。 */
+  function inferLightSide() {
+    if (!photo) return "front";
+    try {
+      var cv = document.createElement("canvas");
+      cv.width = 48; cv.height = 48;
+      var cx = cv.getContext("2d");
+      cx.drawImage(photo, 0, 0, 48, 48);
+      var d = cx.getImageData(0, 0, 48, 48).data;
+      var L = 0, R2 = 0;
+      for (var y = 0; y < 48; y++) {
+        for (var x = 0; x < 48; x++) {
+          var i = (y * 48 + x) * 4;
+          var lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          if (x < 24) L += lum; else R2 += lum;
+        }
+      }
+      if (L > R2 * 1.12) return "left";
+      if (R2 > L * 1.12) return "right";
+      return "front";
+    } catch (e) { return "front"; }
+  }
 
   /* B：采样照片的平均色。用户选的图是 blob/dataURL，同源，不会污染 canvas。 */
   function photoTone() {
@@ -430,6 +501,9 @@
       exposure: renderer ? renderer.toneMappingExposure : null,
       ambient: ambientLight ? Math.round(ambientLight.intensity * 1000) / 1000 : null,
       sunColor: sunLight ? "#" + sunLight.color.getHexString() : null,
+      lightDir: lightDirName,
+      sunPos: sunLight ? [Math.round(sunLight.position.x), Math.round(sunLight.position.y), Math.round(sunLight.position.z)] : null,
+      sunIntensity: sunLight ? sunLight.intensity : null,
       photoMode: isPhoto
     };
   }
@@ -494,6 +568,7 @@
     applyFit();          // 尺度 + 朝向对齐标定矩形（相机不动）
     resize();
     applyLightingMode(); // 照片模式：关阴影、压 envMapIntensity、按照片调色
+    setLightFrom(inferLightSide()); // C：按照片左右亮度猜主光方向，用户可再改
     rebuildPhotoComposite(); // 照片 + 接触暗部合成进背景
   }
 
@@ -815,6 +890,7 @@
    * 对外接口（契约）
    * ========================================================== */
   WH.view3d = {
+    setLightFrom: function (dir) { instance(); return setLightFrom(dir); },
     mount: mount,
     setOrbit: function (o) {
       instance();
