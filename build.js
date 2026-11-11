@@ -8,7 +8,7 @@ const path = require("path");
 
 const ROOT = __dirname;
 const tplPath = path.join(ROOT, "template.html");
-const mods = ["data.js", "render.js", "ui.js"]; // 顺序不可换，见 CONTRACT.md
+const mods = ["data.js", "brief.js", "render.js", "ui.js"]; // 顺序不可换，见 CONTRACT.md
 const cssPath = path.join(ROOT, "src", "app.css");
 
 function read(p) {
@@ -33,7 +33,7 @@ let out = tpl
 const extAll = (out.match(/https?:\/\/[^"\s)]+/g) || []);
 const ext = extAll.filter(function (u) { return u.indexOf("www.w3.org/2000/svg") === -1; });
 const badSrc = /<script[^>]+src=|<link[^>]+href=|@import\s+url\(/.test(out);
-const missing = ["WH.DATA", "renderScene", "initUI"].filter(function (k) {
+const missing = ["WH.DATA", "WH.brief", "renderScene", "initUI"].filter(function (k) {
   return out.indexOf(k) === -1;
 });
 

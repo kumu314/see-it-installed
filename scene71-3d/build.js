@@ -55,6 +55,7 @@ const c3d = [
 ].filter(Boolean);
 const app2d = [
   read(path.join(APP2D, "data.js")),
+  read(path.join(APP2D, "brief.js")),   // 技术方案文本 → 参数（规则解析，零依赖）
   read(path.join(APP2D, "render.js")),
   read(path.join(APP2D, "ui.js"))
 ];
@@ -86,6 +87,7 @@ const badSrc = /<script[^>]+src=|<link[^>]+href=|@import\s+url\(/.test(out);
 var required = ["WH.DATA", "WH.view3d", "renderScene", "initUI", "whModeModel"];
 if (STRICT) required = required.concat(["WH.model", "WH.calib"]);
 const missing = required.filter(k => out.indexOf(k) === -1);
+if (out.indexOf("WH.brief") === -1) missing.push("WH.brief");   // 方案解析模块必须内联
 const size = Buffer.byteLength(out);
 
 if (urls.length || badSrc || missing.length) {
