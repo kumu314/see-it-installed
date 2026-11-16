@@ -1,0 +1,40 @@
+name: browser-check
+
+# 浏览器层门禁：现有 check.yml 只证明「能构建」，这里证明「构建出来的东西能跑、能改参数」。
+# 门禁自己也要被验证：负向自检里把产物换成空 HTML，smoke.cjs 必须红灯。
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 构建 3D 单文件
+        run: node scene71-3d/build.js --strict
+
+      - name: 安装 Playwright 与 Chromium
+        run: |
+          npm init -y
+          npm i --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: 浏览器冒烟验收
+        run: node tests/browser/smoke.cjs
+
+      - name: 负向自检（空产物必须红灯）
+        run: |
+          cp scene71-3d/dist/作品71-3d.html /tmp/good-71.html
+          printf '<!doctype html><title>broken</title>' > scene71-3d/dist/作品71-3d.html
+          if node tests/browser/smoke.cjs >/dev/null 2>&1; then
+            echo "SMOKE 未拦住空产物，门禁失效"
+            exit 1
+          fi
+          cp /tmp/good-71.html scene71-3d/dist/作品71-3d.html
+          echo "负向自检通过：空产物时 smoke 非零退出"
