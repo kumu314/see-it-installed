@@ -106,10 +106,28 @@ if (urls.length || badSrc || missing.length) {
    后产物从 901,101 → 921,866 bytes，硬顶在 900KB 上只差 267 字节。
    1MB 仍是「单文件、零外部依赖、双击即跑」的安全区间（浏览器解析 1MB 内联 JS 无压力），
    阈值的作用是拦住「把整个依赖库打进产物」这类失控，不是拦住功能增长。
-   真要再涨，先查能不能砍依赖，别直接抬线。 */
-if (size > 1024 * 1024) {
+   真要再涨，先查能不能砍依赖，别直接抬线。
+
+   2026-11-17 补预警线：红线 1MB 硬失败，预警线 990KB 只提示不失败。
+   每次构建都输出可机读的 SIZE_REPORT，在撞红线前约 34KB 处提前亮黄灯。 */
+const BUDGET = 1024 * 1024;
+const WARN_AT = 990 * 1024;
+const sizeReport = {
+  bytes: size,
+  budget: BUDGET,
+  warn_at: WARN_AT,
+  headroom: BUDGET - size,
+  pct: Number((size / BUDGET * 100).toFixed(2)),
+  over_warn: size > WARN_AT
+};
+console.log("SIZE_REPORT " + JSON.stringify(sizeReport));
+if (size > BUDGET) {
   console.error("SELF-CHECK FAILED: 体积超 1MB →", size, "bytes");
   process.exit(1);
+}
+if (sizeReport.over_warn) {
+  console.log("SIZE WARN: 产物", size, "bytes 已超预警线", WARN_AT,
+    "，距 1MB 红线仅", sizeReport.headroom, "bytes；先砍依赖，不要直接抬线。");
 }
 
 const distDir = path.join(ROOT, "dist");

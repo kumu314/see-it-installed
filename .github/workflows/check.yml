@@ -56,7 +56,7 @@ jobs:
           set -e
           node scene71-3d/build.js --strict
 
-      - name: 产物存在且模块已接线
+      - name: 产物存在、模块已接线 + 体积报告
         run: |
           set -e
           test -f "scene71-3d/dist/作品71-3d.html"
@@ -64,6 +64,13 @@ jobs:
           echo "$out"
           echo "$out" | grep -q "已接线(A)"
           echo "$out" | grep -q "已接线(B)"
+          report="$(echo "$out" | grep '^SIZE_REPORT ' | sed 's/^SIZE_REPORT //')"
+          test -n "$report"
+          {
+            echo "### 单文件体积预算"
+            echo ""
+            echo "$report" | python3 -c "import json,sys; r=json.load(sys.stdin); print('- 产物：**%d bytes**（%.2f%% of 1MB）' % (r['bytes'], r['pct'])); print('- 余量：**%d bytes**' % r['headroom']); print('- 预警线：%d bytes（%s）' % (r['warn_at'], '已触发' if r['over_warn'] else '未触发'))"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # 负向自检：门禁本身必须有效。把 model.js 临时挪走，
       # --strict 应当非零退出；若仍然通过，说明门禁没拦住静默降级。
@@ -78,3 +85,17 @@ jobs:
           fi
           mv /tmp/model.js.hold scene71-3d/src/model.js
           echo "负向自检通过：缺 model.js 时 --strict 非零退出"
+
+      # 负向自检：把红线临时改成 1 byte，构建必须红灯；否则说明体积门禁失效。
+      - name: 负向自检（体积超预算必须红灯）
+        run: |
+          set -e
+          cp scene71-3d/build.js /tmp/build.js.hold
+          python3 -c "p='scene71-3d/build.js';s=open(p,encoding='utf-8').read();n=s.replace('const BUDGET = 1024 * 1024;','const BUDGET = 1;');assert n!=s,'未匹配到预算常量声明';open(p,'w',encoding='utf-8').write(n)"
+          if node scene71-3d/build.js --strict >/dev/null 2>&1; then
+            cp /tmp/build.js.hold scene71-3d/build.js
+            echo "体积门禁失效：预算改为 1 byte 后仍通过"
+            exit 1
+          fi
+          cp /tmp/build.js.hold scene71-3d/build.js
+          echo "负向自检通过：超预算时 build 非零退出"
