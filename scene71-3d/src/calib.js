@@ -57,7 +57,7 @@
     var f2=numerator/denom;
     if(!finite(f2)||f2<=0)return fail("这四点不像地面上一块矩形的透视。请选地面上真实存在的矩形（地砖缝、轨道边、设备基础），按顺时针依次点四个角；不要点墙面、横幅，也不要又小又扁的平行四边形。");
     var f=Math.sqrt(f2),fov=2*Math.atan(h/(2*f))*180/Math.PI;
-    if(fov<10||fov>140)return fail("估计视场角不合理，请检查选点或镜头畸变");
+    if(fov<10||fov>140)return fail("这四点算出来的画面张角太大或太小，多半是选得太近或太远了。请重新选一块面积大一些的地面，让四个角在照片里分得开一点；也别选鱼眼镜头或超广角拍的照片。");
     var k1=[a[0]/f,a[1]/f,a[2]],k2=[b[0]/f,b[1]/f,b[2]],kt=[(H[2]-cx)/f,(H[5]-cy)/f,1];
     var n1=norm(k1),n2=norm(k2), rx=unit(k1),rz=unit(k2);
     if(!rx||!rz||n1<EPS||n2<EPS)return fail("相机姿态退化");

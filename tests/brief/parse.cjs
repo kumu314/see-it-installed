@@ -81,6 +81,13 @@ eq("无参数文本 ok=false", parse("这是一段没有数字的说明文字。
   eq("宽松识别级别", field(r, "duty"), "A5");
   eq("宽松识别给警告", r.warnings.some(w => w.indexOf("未带「工作级别」") >= 0), true);
 }
+{
+  // 回归：技术文件里常见「工作级别按 A5 考虑」，关键词与级别之间夹字也必须走主匹配
+  const r = parse("工作级别按 A5 考虑，跨度 22.5 m");
+  eq("级别夹字仍识别", field(r, "duty"), "A5");
+  eq("级别夹字不弹宽松警告", r.warnings.some(w => w.indexOf("未带「工作级别」") >= 0), false);
+  eq("级别夹字不影响其他字段", field(r, "span"), 22.5);
+}
 
 console.log("=== 5. 只抽明确值，不做推断 ===");
 {

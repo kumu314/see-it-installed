@@ -433,6 +433,22 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
   .wh-side{overflow:visible}
   .wh-brief{display:none}
 }
+
+/* ---------- 无障碍：动效降级 + 键盘焦点可见（2026-11-12） ----------
+ * 前庭障碍用户看无限循环扫光会晕；键盘用户此前完全看不到焦点落点。
+ * !important 只出现在这条 @media 块内，不扩散到其它规则。 */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.001ms !important;
+    scroll-behavior:auto !important
+  }
+}
+:focus-visible{outline:2px solid #37d6c6;outline-offset:3px}
+.wh-btn:focus-visible,.wh-seg:focus-visible,.wh-scheme:focus-visible,
+.wh-fi:focus-visible,.wh-fc:focus-visible,.wh-grip:focus-visible,
+.wh-range:focus-visible{outline:2px solid #37d6c6;outline-offset:3px}
 `;
 
   function injectStyle() {
@@ -462,7 +478,7 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
           '<div class="wh-layer wh-before" id="whBefore"></div>' +
           '<div class="wh-layer wh-after" id="whAfter"></div>' +
           '<div class="wh-scan" id="whScan"></div>' +
-          '<div class="wh-handle" id="whHandle"><span class="wh-grip"></span></div>' +
+          '<div class="wh-handle" id="whHandle"><span class="wh-grip" role="slider" tabindex="0" aria-label="对比滑块" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></span></div>' +
           '<input class="wh-range" id="whRange" type="range" min="0" max="100" step="0.5" value="50" aria-label="对比滑块：左右拖动切换现场照片与效果图">' +
         '</div>' +
         '<div class="wh-statusbar" id="whStatus" role="status" aria-live="polite"></div>' +
@@ -1632,15 +1648,6 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
     $.gapV = q("#whGapV");
     $.statusEl = q('#whStatus');
 
-    // 2D 单文件版没有 3D 模块：按钮不可点并说明原因
-    if (!window.WH || !window.WH.view3d) {
-      if ($.modeModel) {
-        $.modeModel.disabled = true;
-        $.modeModel.title = '当前为 2D 单文件版，不含 3D 模块';
-        $.modeModel.setAttribute('aria-disabled', 'true');
-      }
-    }
-
     buildSteps();
     buildParams();
     buildSchemes();
@@ -1649,6 +1656,17 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
     if ($.rerenderBtn && DATA.rerender) $.rerenderBtn.textContent = DATA.rerender.label;
 
     bind();
+
+    // 2D 单文件版没有 3D 模块：按钮不可点并说明原因。
+    // 必须放在 bind() 之后——$.modeModel 是在 bind() 里才赋值的；
+    // 放在前面 $ 还是空的，禁用会静默失效，用户点了「3D 预览」会掉进空视图。
+    if (!window.WH || !window.WH.view3d) {
+      if ($.modeModel) {
+        $.modeModel.disabled = true;
+        $.modeModel.title = '当前为 2D 单文件版，不含 3D 模块';
+        $.modeModel.setAttribute('aria-disabled', 'true');
+      }
+    }
 
     applyConfig(DATA.configs[0].id);
     setP(50);
@@ -1666,6 +1684,53 @@ body{background:radial-gradient(1200px 800px at 70% -10%,#1a2431 0%,#0c1015 55%,
   };
   WH.__dispatch = dispatch;
   WH.__setViewMode = function (m) { return setViewMode(m); };
+
+  /* ---------------- 技术方案导入的正式入口（brief.js 优先级 1） ----------------
+   * 为什么必须走 commitConfig：F01 约定参数栏 / 2D / 3D / 导出同源，
+   * 只换 3D 模型或只改 DOM 会造成「看着变了、切方案又弹回去」。
+   * 入参只含技术方案里真正识别到的字段；未识别项保留当前方案，不回填 A 方案默认值。
+   * 失败一律 throw，让 brief.applyTo 落到降级路径并把原因显示给用户。 */
+  WH.__applyParams = function (params) {
+    if (!cfg || !DATA) throw new Error('界面尚未初始化，无法应用参数');
+    var src = params && typeof params === 'object' ? params : {};
+    var cand = cloneObj(cfg);
+    ['span', 'capacity', 'railHeight', 'duty', 'agv', 'productType', 'bayType'].forEach(function (k) {
+      if (src[k] != null) cand[k] = src[k];
+    });
+    ['span', 'capacity', 'railHeight', 'agv'].forEach(function (k) {
+      if (typeof cand[k] === 'string') cand[k] = Number(cand[k]);
+    });
+    /* bayType 与 columnSpan 是配套字段（data.js __validate 口径），只改其一会让自检不通过 */
+    var BAY_COL = { outdoor: 0, single: 6, double: 12 };
+    if (Object.prototype.hasOwnProperty.call(BAY_COL, cand.bayType)) cand.columnSpan = BAY_COL[cand.bayType];
+
+    /* 命中内置方案就直接复用完整数据，保留 scene / source / painPoint 等上下文 */
+    var presetId = findPresetId(cand);
+    var preset = presetId ? cfgById(presetId) : null;
+    if (preset && (!src.bayType || preset.bayType === cand.bayType) && preset.agv === cand.agv) {
+      cand = cloneObj(preset);
+    } else {
+      cand.id = '自定义';
+      cand.model = (TYPE_NAMES[cand.productType] || '自定义') + ' · 技术方案导入';
+      /* 连续导入多次时先剥掉旧后缀，避免「… · 技术方案导入 · 技术方案导入」无限叠加 */
+      var baseScene = String(cfg.scene || '当前方案').replace(/(?:\s*·\s*技术方案导入)+$/, '');
+      cand.scene = baseScene + ' · 技术方案导入';
+      cand.source = 'doc';
+    }
+
+    var errs = (DATA && typeof DATA.validateConfig === 'function') ? DATA.validateConfig(cand) : [];
+    if (errs && errs.length) throw new Error(errs[0].message || '参数未通过校验');
+    if (!commitConfig(cand, 'brief')) throw new Error('参数未通过校验，画布保持上一版');
+
+    /* 清掉手输草稿：否则用户再点一次「应用参数」会把刚导入的值覆盖回旧草稿 */
+    draft = null;
+    if ($.conflictEl) $.conflictEl.hidden = true;
+    clearFieldError();
+    renderDraftBar();
+    syncFormFrom(cfg);
+    flashParams();
+    return { ok: true, via: '参数栏 / 3D / 导出同源', revision: cfgRev, config: serializeConfig(cfg) };
+  };
 
   if (document.getElementById("app")) {
     initUI();

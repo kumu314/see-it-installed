@@ -99,7 +99,10 @@
   }
 
   function grabDuty(text) {
-    var m = text.match(/(?:工作级别|工作制度|级别)\s*[为是:：]?\s*(A[1-8])/i);
+    /* 「工作级别按 A5 考虑」「级别选用 A7」「工作级别：A8」都走主匹配。
+       以前只认「为/是/冒号」，夹一个「按」字就退到宽松匹配，还会弹出
+       「未带『工作级别』字样」这种和原文不符的解释。 */
+    var m = text.match(/(?:工作级别|工作制度|级别)\s*(?:按照|按|采用|选用|取|定为|为|是|[:：])?\s*(A[1-8])/i);
     if (!m) {
       var loose = text.match(/\b(A[1-8])\b/);
       if (!loose) return null;
@@ -217,14 +220,22 @@
 
   /* ---------------- 应用到画面 ----------------
    * 优先级：
-   *   1) WH.__applyParams(params)   —— 若 ui.js 将来提供正式入口，状态完全一致
-   *   2) WH.view3d.setModel(WH.model.build(params))  —— 3D 产物直接换模型
-   *   3) #whAfter.innerHTML = WH.renderScene(...)    —— 2D 产物直接换图
-   * 后两条是降级路径：只换画面，不改 ui.js 的内部状态，切方案时会被覆盖（这是预期行为）。
-   * 缺项用 base 里的对应值补齐，并在返回值里列出「沿用了哪些」。 */
+   *   1) WH.__applyParams(matched) —— ui.js 正式入口，走 commitConfig，参数栏/2D/3D/导出同源
+   *   2) WH.view3d.replaceModel(WH.model.build(params)) —— 3D 降级，直接换模型
+   *   3) #whAfter.innerHTML = WH.renderScene(...)       —— 2D 降级，直接换图
+   * 后两条只换画面、不改 ui.js 内部状态，切方案时会被覆盖（预期行为，结果里带 errors）。
+   * 缺项用 base 补齐；base 缺省取「当前方案」而不是固定的 A 方案，避免把默认值灌进来。 */
+  function currentConfig() {
+    try {
+      if (window.WH && typeof WH.__getState === 'function') return WH.__getState().config || null;
+    } catch (e) { /* 2D 单文件版没有 ui.js，取不到就走 DATA.configs[0] */ }
+    return null;
+  }
   function applyTo(result, base) {
     var params = {}, filled = [], missing = [];
-    var fallback = base || (window.WH && WH.DATA && WH.DATA.configs && WH.DATA.configs[0]) || {};
+    var fallback = base || currentConfig() ||
+      (window.WH && WH.DATA && WH.DATA.configs && WH.DATA.configs[0]) || {};
+    var via = [], errs = [];
     FIELDS.forEach(function (f) {
       var v = result && result.params ? result.params[f.key] : undefined;
       if (v != null) {
@@ -239,12 +250,22 @@
 
     if (typeof window.WH.__applyParams === "function") {
       try {
-        window.WH.__applyParams(params);
-        return { via: "WH.__applyParams", params: params, filled: filled, missing: missing };
-      } catch (e) { /* 落到降级 */ }
+        /* 只交真正识别到的字段；未识别项由 ui.js 保留当前方案，不覆盖成默认方案 */
+        var matched = {};
+        FIELDS.forEach(function (f) {
+          if (result && result.params && result.params[f.key] != null) matched[f.key] = result.params[f.key];
+        });
+        var applied = window.WH.__applyParams(matched);
+        if (!applied || applied.ok === false) throw new Error((applied && applied.message) || "参数未通过校验");
+        return {
+          via: applied.via || "WH.__applyParams", params: params,
+          appliedParams: matched, filled: filled, missing: missing, applied: applied
+        };
+      } catch (e) {
+        errs.push("正式入口应用失败：" + (e && e.message ? e.message : String(e)));
+      }
     }
 
-    var via = [], errs = [];
     /* view3d 的对外接口是 replaceModel（保留当前视角）；老版本可能叫 setModel，两个都认。 */
     var v3 = window.WH.view3d;
     var setter = v3 && (typeof v3.replaceModel === "function" ? v3.replaceModel
@@ -278,10 +299,24 @@
 
   /* ---------------- 悬浮入口（不依赖 ui.js） ---------------- */
   var CSS = "" +
-    ".whb-fab{position:fixed;right:18px;bottom:18px;z-index:9998;display:flex;align-items:center;gap:6px;" +
-    "font:600 13px/1 'Microsoft YaHei',sans-serif;color:#12161c;background:linear-gradient(135deg,#ffc24b,#f59a1f);" +
-    "border:0;border-radius:999px;padding:11px 16px;cursor:pointer;box-shadow:0 8px 22px rgba(245,154,31,.32)}" +
-    ".whb-fab:hover{filter:brightness(1.06)}" +
+    ".whb-fab{position:fixed;right:18px;bottom:18px;z-index:9998;display:flex;align-items:center;gap:7px;" +
+    "font:700 14px/1 'Microsoft YaHei',sans-serif;color:#12161c;background:linear-gradient(135deg,#ffc24b,#f59a1f);" +
+    "border:2px solid #ffe0a0;border-radius:999px;padding:13px 20px;cursor:pointer;" +
+    "box-shadow:0 8px 26px rgba(245,154,31,.5),0 0 0 4px rgba(255,194,75,.12)}" +
+    ".whb-fab:hover{filter:brightness(1.06);transform:translateY(-1px)}" +
+    /* 顶部主入口：与「导出预览」并列，避免右下角小胶囊被忽略 */
+    ".whb-top{font:700 13px/1 inherit;color:#12161c;background:linear-gradient(135deg,#ffc24b,#f59a1f);" +
+    "border:2px solid #ffe0a0;border-radius:10px;padding:9px 14px;cursor:pointer;" +
+    "box-shadow:0 4px 14px rgba(245,154,31,.3);white-space:nowrap}" +
+    ".whb-top:hover{filter:brightness(1.06)}" +
+    /* 键盘焦点可见：用 outline 不用 border，避免尺寸抖动 */
+    ".whb-fab:focus-visible,.whb-top:focus-visible,.whb-btn:focus-visible," +
+    ".whb-box textarea:focus-visible{outline:2px solid #37d6c6;outline-offset:3px}" +
+    /* 动效降级：前庭障碍用户关掉扫光/位移，且只在此块内用 !important */
+    "@media (prefers-reduced-motion:reduce){" +
+    "*,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;" +
+    "transition-duration:.001ms !important;scroll-behavior:auto !important}}" +
+
     ".whb-mask{position:fixed;inset:0;z-index:9999;background:rgba(5,10,18,.86);display:flex;align-items:center;justify-content:center;padding:20px}" +
     ".whb-mask[hidden]{display:none}" +
     ".whb-box{width:min(880px,100%);max-height:88vh;overflow:auto;background:#101a23;color:#dce8ee;border:1px solid #2b3b47;" +
@@ -327,24 +362,45 @@
     fab.id = "whb-fab";
     fab.className = "whb-fab";
     fab.type = "button";
-    fab.textContent = "📄 技术方案";
-    fab.title = "粘贴技术方案里的参数段，自动抽成参数（需人工核对）";
+    fab.textContent = "📄 提交技术方案";
+    fab.title = "把技术方案贴进来或选个文本文件，自动抽成参数（需人工核对）";
+    fab.setAttribute("aria-haspopup", "dialog");
+    /* 顶部主入口：若 ui.js 的头部动作区已存在就插进去；不存在则等 DOM 就绪后重试。 */
+    var topBtn = null, tries = 0;
+    function tryInsertTop() {
+      if (topBtn && document.body.contains(topBtn)) return true;
+      var host = document.querySelector(".wh-head-actions");
+      if (!host) return false;
+      topBtn = document.createElement("button");
+      topBtn.id = "whb-top";
+      topBtn.className = "whb-top";
+      topBtn.type = "button";
+      topBtn.textContent = "📄 提交技术方案";
+      topBtn.title = "把技术方案贴进来或选个文本文件，自动抽成参数（需人工核对）";
+      topBtn.setAttribute("aria-haspopup", "dialog");
+      topBtn.addEventListener("click", openMask);
+      host.insertBefore(topBtn, host.firstChild);
+      return true;
+    }
 
     var mask = document.createElement("div");
     mask.className = "whb-mask";
     mask.hidden = true;
     mask.innerHTML =
-      '<div class="whb-box" role="dialog" aria-label="技术方案参数识别">' +
-        '<h3>技术方案 → 参数</h3>' +
-        '<p class="whb-hint">把方案里写参数的那几句贴进来（如「跨度 48 m，额定起重量 2000 t，轨高 30 m，门式起重机」）。' +
-        '只抽明确写出的数值，抽不到就留空，不做推断。识别结果需人工核对后才能使用。</p>' +
-        '<textarea id="whb-text" placeholder="示例：本工程采用门式起重机，跨度 48 m，额定起重量 2000 t，轨面标高 30 m，工作级别 A8，AGV 2 台，露天堆场。"></textarea>' +
+      '<div class="whb-box" role="dialog" aria-modal="true" aria-labelledby="whb-title">' +
+        '<h3 id="whb-title">提交技术方案 → 自动抽参数</h3>' +
+        '<p class="whb-hint"><b>第 1 步：把技术方案里的参数段贴进来，或选一个 .txt / .md 文本文件。</b>' +
+        '例如「跨度 48 m，额定起重量 2000 t，轨高 30 m，门式起重机」。' +
+        '只抽明确写出的数值，抽不到就留空、不做推断；识别结果需人工核对后才能使用。</p>' +
+        '<textarea id="whb-text" aria-label="技术方案文本" placeholder="示例：本工程采用门式起重机，跨度 48 m，额定起重量 2000 t，轨面标高 30 m，工作级别 A8，AGV 2 台，露天堆场。"></textarea>' +
         '<div class="whb-row">' +
           '<button class="whb-btn primary" id="whb-parse" type="button">解析</button>' +
+          '<label class="whb-btn" for="whb-file" style="cursor:pointer;margin:0">选择文本文件</label>' +
+          '<input id="whb-file" type="file" accept=".txt,.md,.csv,text/plain" aria-label="选择技术方案文本文件" hidden>' +
           '<button class="whb-btn" id="whb-clear" type="button">清空</button>' +
           '<button class="whb-btn" id="whb-close" type="button" style="margin-left:auto">关闭</button>' +
         '</div>' +
-        '<div id="whb-out"></div>' +
+        '<div id="whb-out" role="status" aria-live="polite"></div>' +
       '</div>';
 
     document.body.appendChild(fab);
@@ -386,8 +442,10 @@
       var applyBtn = out.querySelector("#whb-apply");
       if (applyBtn) {
         applyBtn.addEventListener("click", function () {
-          var res = applyTo(result);
-          var msg = "已应用（" + res.via + "）";
+          var res = applyTo(lastResult || result, currentConfig());
+          var msg = (res.errors && res.errors.length)
+            ? "部分应用（" + res.via + "）：" + res.errors.join("；")
+            : "已应用（" + res.via + "）";
           if (res.filled && res.filled.length) {
             msg += "；" + res.filled.length + " 项未识别，沿用当前方案";
           }
@@ -402,12 +460,37 @@
       });
     }
 
-    fab.addEventListener("click", function () {
+    function openMask() {
       mask.hidden = false;
       setTimeout(function () { ta.focus(); }, 30);
+    }
+    function closeMask() { mask.hidden = true; }
+    fab.addEventListener("click", openMask);
+    mask.querySelector("#whb-close").addEventListener("click", closeMask);
+    mask.addEventListener("click", function (e) { if (e.target === mask) closeMask(); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !mask.hidden) closeMask();
     });
-    mask.querySelector("#whb-close").addEventListener("click", function () { mask.hidden = true; });
-    mask.addEventListener("click", function (e) { if (e.target === mask) mask.hidden = true; });
+    /* 文本文件直读：零依赖、零网络，读进 textarea 后走同一套 parse() */
+    var fileInput = mask.querySelector("#whb-file");
+    fileInput.addEventListener("change", function () {
+      var f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () {
+        ta.value = String(rd.result || "").slice(0, 200000);
+        out.innerHTML = '<p class="whb-sum">已读入文件：' + escapeHtml(f.name) + '，点「解析」继续。</p>';
+        ta.focus();
+      };
+      rd.onerror = function () { out.innerHTML = '<p class="whb-sum">文件读取失败，请改用直接粘贴。</p>'; };
+      rd.readAsText(f, "utf-8");
+      fileInput.value = "";
+    });
+    /* 头部区可能由 ui.js 稍后渲染，做有限次重试而非永久监听 */
+    (function waitTop() {
+      if (tryInsertTop()) return;
+      if (++tries < 20) setTimeout(waitTop, 100);
+    })();
     mask.querySelector("#whb-clear").addEventListener("click", function () {
       ta.value = ""; out.innerHTML = ""; lastResult = null; ta.focus();
     });
@@ -417,7 +500,7 @@
     });
 
     if (opts.autoOpen) mask.hidden = false;
-    return { fab: fab, mask: mask, parse: parse, applyTo: applyTo };
+    return { fab: fab, topBtn: topBtn, mask: mask, parse: parse, applyTo: applyTo };
   }
 
   window.WH.brief = {
